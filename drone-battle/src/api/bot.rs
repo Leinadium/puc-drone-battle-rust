@@ -125,6 +125,7 @@ impl Bot {
     ///
     /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
+        self.ai.field.do_tick(&duration);
         if duration.as_millis() > 0 {
             thread::sleep(duration)
         }
@@ -171,6 +172,8 @@ impl Bot {
         let mut playing: bool = false;
         let mut action: Action = Action::NOTHING;
 
+        self.ai.field.restart();
+
         loop {
             // game is running
             if check_exit_handler(self.exit_handler.borrow()) { return }    // early exit
@@ -213,6 +216,7 @@ impl Bot {
                 self.update_with_server();
                 if playing { self.say_all_chat("gg".to_string()) }      // say gg once
                 playing = false;
+                self.ai.field.restart();
 
                 // after some time, ask for scoreboard
                 if timer == 5 {

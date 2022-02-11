@@ -9,3 +9,4 @@ pub mod enums;
 pub mod structs;
 pub mod config;
 pub mod ai;
+pub mod map;
