@@ -1,0 +1,14 @@
+{
+  "name": "TGVpbmFkaXVt",
+  "url": "atari.icad.puc-rio.br",
+  "slow_timer": 1000,
+  "normal_timer": 200,
+  "min_timer": 200,
+  "default_color": {
+    "r": 23,
+    "g": 179,
+    "b": 132,
+    "a": 0
+  },
+  "spawn_timer": 15600
+}

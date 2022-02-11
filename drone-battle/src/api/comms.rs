@@ -5,15 +5,14 @@
 ///     be handled using channels
 ///
 
-use std::io::{Error, ErrorKind, Write};
-use std::net::TcpStream;
+use std::io::{ErrorKind, Read, Write, Error};
+use std::net::{TcpStream, Shutdown};
 use std::sync::mpsc;
 use std::time::Duration;
+use std::thread;
+use std::fmt::Debug;
 
-use crate::api::comms::ServerCommand::COLOR;
-use crate::api::enums::{
-    PlayerDirection, ServerState,
-};
+use crate::api::enums::{Action, PlayerDirection, ServerState};
 use crate::api::structs::{
     LastObservation, Color,
     Scoreboard, ServerObservation,
@@ -23,45 +22,58 @@ use crate::api::structs::{
     ServerPlayerLeft, ServerChangeName,
     ServerHit, ServerDamage
 };
+use crate::api::config::Config;
 
-type ClientSendChannel = mpsc::Sender<ClientCommunication>;
-type ClientRecvChannel = mpsc::Receiver<ServerCommunication>;
-type ServerSendChannel = mpsc::Sender<ServerCommunication>;
-type ServerRecvChannel = mpsc::Receiver<ClientCommunication>;
+type SenderChannel = mpsc::Sender<RecvCommand>;
+type ReceiverChannel = mpsc::Receiver<SendCommand>;
 
 
 /// Commands to be sent to the server
+#[derive(Debug, PartialEq, Clone)]
 pub enum ServerCommand {
-    FORWARD, BACKWARD,
-    LEFT, RIGHT, GET,
-    SHOOT, OBSERVATION,
-    GAMESTATUS, USERSTATUS,
-    POSITION, SCOREBOARD,
-    GOODBYE, NAME,
-    SAY, COLOR,
+    FORWARD,
+    BACKWARD,
+    LEFT,
+    RIGHT,
+    GET,
+    SHOOT,
+    OBSERVATION,
+    GAMESTATUS,
+    USERSTATUS,
+    POSITION,
+    SCOREBOARD,
+    GOODBYE,
+    NAME,
+    SAY,
+    COLOR,
+    NOTHING,
 }
-
-pub enum ClientCommunication {
-    GetLastRecvCommand,             // asking for the last command
-    SendThisCommand(SendCommand)    // asking for a command to be send
-}
-
-pub enum ServerCommunication {
-    Ok,                             // server responded with OK
-    Error,                          // server responded with Error
-    RecvCommand(RecvCommand)        // server responded with a command
-}
-
 
 /// This struct is used to send a command to the server,
 /// via the comms' channel
+#[derive(Debug, Clone)]
 pub struct SendCommand {
-    command: ServerCommand,
-    attr: Option<String>
+    pub command: ServerCommand,
+    pub attr: Option<String>
+}
+
+impl SendCommand {
+    pub fn from_action(action: &Action) -> SendCommand {
+        match action {
+            Action::FRONT => SendCommand { command: ServerCommand::FORWARD, attr: None },
+            Action::BACK => SendCommand { command: ServerCommand::BACKWARD, attr: None },
+            Action::LEFT => SendCommand { command: ServerCommand::LEFT, attr: None },
+            Action::RIGHT => SendCommand { command: ServerCommand::RIGHT, attr: None },
+            Action::GET => SendCommand { command: ServerCommand::GET, attr: None },
+            Action::SHOOT => SendCommand { command: ServerCommand::SHOOT, attr: None },
+            Action::NOTHING => SendCommand { command: ServerCommand::NOTHING, attr: None },
+        }
+    }
 }
 
 /// This struct is used to receive something from the server,
 /// and send via channel to the bot's main thread
+#[derive(Debug)]
 pub enum RecvCommand {
     Observations(ServerObservation),
     Status(ServerStatus),
@@ -74,7 +86,18 @@ pub enum RecvCommand {
     ChangeName(ServerChangeName),
     Hit(ServerHit),
     Damage(ServerDamage),
-    Invalid
+    Invalid(String)
+}
+
+impl RecvCommand {
+    pub fn to_string(&self) -> String {
+        match self {
+            RecvCommand::Observations(so) => {
+                format!("ServerObservation({})", so.last_observation)
+            },
+            rc=> format!("{:?}", rc)
+        }
+    }
 }
 
 /// Main struct of all communications.
@@ -88,34 +111,47 @@ pub enum RecvCommand {
 pub struct GameServer {
     connected: bool,
     active: bool,
-    recv_channel: ServerRecvChannel,
-    send_channel: ServerSendChannel,
+    recv_channel: ReceiverChannel,
+    send_channel: SenderChannel,
     server: Option<TcpStream>,
-    last_recv_command: Option<RecvCommand>,
     drone_color: Option<Color>,
     drone_name: Option<String>
 }
 
 impl GameServer {
     /// Creates a new GameServer, without connecting to the server yet.
-    pub fn new(receiver: ServerRecvChannel, sender: ServerSendChannel) -> GameServer {
+    pub fn new(receiver: ReceiverChannel, sender: SenderChannel, config: &Config) -> GameServer {
         GameServer {
             connected: false,
             active: false,
             recv_channel: receiver,
             send_channel: sender,
             server: None,
-            last_recv_command: None,
-            drone_color: None,
-            drone_name: None
+            drone_color: Some(config.default_color.clone()),
+            drone_name: Some(config.name.clone())
+        }
+    }
+
+    pub fn close(&mut self) -> Result<(), Error>{
+        if let Some(stream) = self.server.as_mut() {
+            if let Err(e) = stream.shutdown(Shutdown::Both) {
+                println!("GameServer [ERROR]: error closing connecting");
+                Err(e)
+            } else {
+                println!("GameServer: connecting closed successfully");
+                Ok(())
+            }
+        } else {
+            println!("GameServer [ERROR]: attempt to close a non-existing connection");
+            Err(Error::from(ErrorKind::NotConnected))
         }
     }
 
     fn check_internal_state(&self) -> Result<(), &str> {
         if self.connected {
-            if self.server.is_none() { Err("no tcp connection stored") }
-            if self.drone_name.is_none() { Err("no name stored") }
-            if self.drone_color.is_none() { Err("no color stored") }
+            if self.server.is_none() { return Err("no tcp connection stored") }
+            if self.drone_name.is_none() { return Err("no name stored") }
+            if self.drone_color.is_none() { return Err("no color stored") }
             Ok(())
         } else { Ok(()) }
     }
@@ -141,34 +177,35 @@ impl GameServer {
                 return
             }
 
-            let server = &mut self.server.unwrap();
-            let name = self.drone_name.unwrap().clone();
-            let color = self.drone_color.unwrap().clone();
+            let server = self.server.as_mut().unwrap();
+            let name = self.drone_name.as_ref().unwrap().clone();
+            let color = self.drone_color.as_ref().unwrap().clone();
 
             // sending my name
             send_command(server, SendCommand {
                 command: ServerCommand::NAME, attr: Some(name)
-            });
+            }).ok();
 
             // sending my color
             send_command(server, SendCommand {
                 command: ServerCommand::COLOR, attr: Some(color.to_string())
-            });
+            }).ok();
 
             // requesting game status
             send_command(server, SendCommand {
                 command: ServerCommand::GAMESTATUS, attr: None
-            });
+            }).ok();
 
             // requesting user status
             send_command(server, SendCommand {
                 command: ServerCommand::USERSTATUS, attr: None
-            });
+            }).ok();
 
             // requesting observation
             send_command(server, SendCommand {
                 command: ServerCommand::OBSERVATION, attr: None
-            });
+            }).ok();
+
         } else {
             println!("GameServer: disconnected")
         }
@@ -177,68 +214,95 @@ impl GameServer {
     pub fn start(&mut self, address: &str, port: Option<i32>) {
         if !self.connected {
             self.server = Some(tcp_connect(address, port));
+
+            // reading ip
+            let ip = self.server.as_mut()
+                .unwrap()
+                .peer_addr()
+                .expect("could not connect to the server");
+            println!("sucessfully connected with {}", ip);
+
+            // setting up
+            self.server.as_mut()
+                .unwrap()
+                .set_nonblocking(true)
+                .expect("set_nonblocking call failed");
+            println!("connection with server is all set up");
+
             self.connected = true;
             self.active = true;
             self.keep_alive();
 
             // starting loop
+            println!("starting loop");
             self.thread_loop();
         }
     }
 
-    fn thread_loop(&mut self) {}
+    fn thread_loop(&mut self) {
+        // send initial commands
+        self.socket_status_change();
 
-    pub fn do_this_command(
-        send_channel: &mut ClientSendChannel,
-        recv_channel: &mut ClientRecvChannel,
-        command: SendCommand,
-        timeout: Option<Duration>
-    ) -> Result<(), Err> {
+        loop {
+            self.keep_alive();      // update self
 
-        if let mpsc::SendError(_) = send_channel.send(ClientCommunication::SendThisCommand(command)) {
-            println!("failed to connect with GameServer thread. Is it down?");
-            return Err("GameServer connecting ended");
-        }
+            let mut recv_buffer = [0; 1024];
+            if self.connected {
+                // checking with server for new commands
+                let has_message = match self.server.as_mut().unwrap().read(&mut recv_buffer) {
+                    Ok(size) => size > 0,
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(1));
+                        false
+                    },
+                    Err(e) => panic!("GameServer [ERROR]: thread_loop: error -> {}", e)
+                };
 
-        match recv_channel.recv_timeout(timeout.unwrap_or(Duration::from_millis(10))) {
-            Ok(ServerCommunication::Ok) => Ok(()),
-            Ok(ServerCommunication::Error) => Err("GameServer returned error on do_this_command"),
-            Ok(_) => Err("GameServer returned invalid on do_this_command"),
-            Err(mpsc::RecvTimeoutError::Timeout) => Err("GameServer channel timeout on do_this_command"),
-            Err(mpsc::RecvTimeoutError::Disconnected) => Err("GameServer channel has disconnected on do_this_command")
+                if has_message {
+                    // converting commands
+                    let recv_string: String = String::from_utf8_lossy(&recv_buffer).to_string();
+                    let mut commands: Vec<RecvCommand> = Vec::new();
+                    for c in parse_buffer(recv_string) {
+                        commands.push(parse_command(&c))
+                    }
+
+                    // sending commands to client
+                    for cmd in commands {
+                        if let Err(e) = self.send_channel.send(cmd) {
+                            println!("GameServer [ERROR]: error sending command back to client: {}", e);
+                        }
+                    }
+                }
+
+                // checking with client for something
+                match self.recv_channel.try_recv() {
+                    Ok(sc) => {
+                        if let Err(e) = send_command(self.server.as_mut().unwrap(), sc.clone()) {
+                            println!("GameServer [ERROR]: error sending command to server: {}", e);
+                        }
+
+                        // checking for a goodbye
+                        if ServerCommand::GOODBYE == sc.command {
+                            self.close().expect("unable to close the connection");
+                            return      // exiting thread loop
+                        }
+
+                    },
+                    Err(mpsc::TryRecvError::Empty) => {},
+                    Err(mpsc::TryRecvError::Disconnected) => panic!("GameServer: client has disconnected")
+                };
+            }   // endif
+            thread::sleep(Duration::from_millis(10));
         }
     }
 
-    pub fn access_last_recv_command(
-        send_channel: &mut ClientSendChannel,
-        recv_channel: &mut ClientRecvChannel,
-        timeout: Option<Duration>
-    ) -> Option<RecvCommand> {
-
-        if let mpsc::SendError(_) = send_channel.send(ClientCommunication::GetLastRecvCommand) {
-            println!("failed to connect with GameServer thread. Is it down?");
-            return None;
-        };
-
-        match recv_channel.recv_timeout(timeout.unwrap_or(Duration::from_millis(10))) {
-            Ok(ServerCommunication::RecvCommand(r)) => Some(r),
-
-            Ok(ServerCommunication::Error) => {
-                println!("GameServer returned error on access_last_recv_command");
-                None
+    pub fn do_this_command(send_channel: &mut mpsc::Sender<SendCommand>, command: SendCommand, ) -> Result<(), &str> {
+        match send_channel.send(command) {
+            Err(_) => {
+                println!("failed to connect with GameServer thread. Is it down?");
+                Err("GameServer connection ended")
             },
-
-            Ok(ServerCommunication::Ok) => None,
-
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                println!("GameServer channel timeout on access_last_recv_command");
-                None
-            },
-
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                println!("GameServer channel has disconnected on access_last_recv_command");
-                None
-            }
+            Ok(_) => Ok(())
         }
     }
 }
@@ -250,7 +314,7 @@ fn tcp_connect(address: &str, port: Option<i32>) -> TcpStream {
         "{}:{}", address, port.unwrap_or(8888)
     );
 
-    TcpStream::connect(full_address)
+    TcpStream::connect(full_address.clone())
         .expect(format!(
             "Error creating tcp stream for {}", full_address).as_str()
         )
@@ -267,8 +331,12 @@ fn tcp_connect(address: &str, port: Option<i32>) -> TcpStream {
 fn send_msg(stream: &mut TcpStream, msg: String) -> Result<usize, &str>{
     match stream.write(msg.as_bytes()) {
         Ok(u) => Ok(u),
-        Err(_) => Err("Error sending raw message")
+        Err(_) => {
+            // println!("error writing to server: {}", e);
+            Err("Error sending raw message")
+        }
     }
+
 }
 
 /// Send a command to the server.
@@ -283,18 +351,18 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Result<(), &str
     // checking if the command has its attr correctly
     let attr = match command.command {
         ServerCommand::NAME | ServerCommand::SAY | ServerCommand::COLOR => {
-            match command.attr {
-                Some(s) => s,
+            match &command.attr {
+                Some(s) => s.clone(),
                 None => return Err("invalid command without attr")
             }
         },
-        _ => {}
+        _ => "".to_string()
     };
 
     let mut msg = match command.command {
         ServerCommand::FORWARD => "w".to_string(),
         ServerCommand::BACKWARD => "s".to_string(),
-        ServerCommand::LEFT => "a".as_bytes(),
+        ServerCommand::LEFT => "a".to_string(),
         ServerCommand::RIGHT => "d".to_string(),
         ServerCommand::GET => "t".to_string(),
         ServerCommand::SHOOT => "e".to_string(),
@@ -306,8 +374,10 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Result<(), &str
         ServerCommand::NAME => format!("name;{}", attr),
         ServerCommand::SAY => format!("say;{}", attr),
         ServerCommand::COLOR => format!("color;{}", attr),
-        _ => {"".to_string()}
+        _ => return Ok(()),      // skipping
     };
+
+    println!("GameServer: sending to server -> {:?} (raw message: {})", &command, &msg);
 
     // colocando o \n e botando em utf-8
     msg = format!("{}\n", msg);
@@ -317,7 +387,7 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Result<(), &str
     }
 }
 
-fn parse_buffer(data: String) -> &[String] {
+fn parse_buffer(data: String) -> Vec<String> {
 
     let to_be_trimmed: &[char] = &['\0', '\r', '\n'];
     let to_be_ignored: &[char] = &['\x01', '\x03'];
@@ -336,24 +406,12 @@ fn parse_buffer(data: String) -> &[String] {
             v.push(c);
         }
     }
-
-    v.as_slice()
+    v
 }
 
 fn parse_observations(observations: String) -> LastObservation {
-    let mut last_observation: LastObservation = LastObservation {
-        is_enemy_front: false,
-        is_blocked: false,
-        is_steps: false,
-        is_breeze: false,
-        is_flash: false,
-        is_treasure: false,
-        is_powerup: false,
-        is_damage: false,
-        is_hit: false,
-        distance_enemy_front: -1
-    };
-    if !observations.trim() == "" {
+    let mut last_observation: LastObservation = LastObservation::new();
+    if observations.trim() != "" {
         for o in observations.trim().split(",") {
             let temp: Vec<&str> = o.split("#").collect();
             if temp.len() > 1 {
@@ -374,10 +432,12 @@ fn parse_observations(observations: String) -> LastObservation {
     last_observation
 }
 
-fn parse_command(cmd_str: String) -> RecvCommand {
+fn parse_command(cmd_str: &String) -> RecvCommand {
     let to_be_trimmed: &[char] = &['\0', '\r'];
 
-    let cmd: Vec<&str> = cmd_str.trim_matches(to_be_trimmed).split(';').collect();
+    let cmd: Vec<&str> = cmd_str.trim_matches(to_be_trimmed)
+        .split(';')
+        .collect();
 
     match cmd[0] {
         // OBSERVATION
@@ -388,7 +448,7 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                         last_observation: parse_observations(cmd[1].to_string())
                     }
                 )
-            } else { RecvCommand::Invalid }
+            } else { RecvCommand::Invalid(cmd_str.to_string()) }
         },
 
         // STATUS
@@ -400,16 +460,16 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                         y: cmd[2].parse::<i8>().unwrap_or(-1),
                         dir: PlayerDirection::from_str(cmd[3]),
                         state: ServerState::from_str(cmd[4]),
-                        score: cmd[5].parse::<i64>().unwrap_or(0),
-                        energy: cmd[5].parse::<i8>().unwrap_or(0),
+                        score: cmd[5].parse::<i64>().unwrap_or(-123),
+                        energy: cmd[5].parse::<i8>().unwrap_or(-123),
                     }
                 )
-            } else { RecvCommand::Invalid }
+            } else { RecvCommand::Invalid(cmd_str.to_string()) }
         }
 
         // PLAYER
         "player" => {
-            if cmd.len() == 7 {
+            if cmd.len() == 8 {
                 RecvCommand::Player(
                     ServerPlayer {
                         node: cmd[1].parse::<i64>().unwrap_or(0),
@@ -421,7 +481,7 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                         color: Color::from_str(cmd[7])
                     }
                 )
-            } else { RecvCommand::Invalid }
+            } else { RecvCommand::Invalid(cmd_str.to_string()) }
         },
         "g" => {
             if cmd.len() == 3 {
@@ -431,7 +491,7 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                         time: cmd[2].parse::<i64>().unwrap_or(-1)
                     }
                 )
-            } else { RecvCommand::Invalid }
+            } else { RecvCommand::Invalid(cmd_str.to_string()) }
         },
         "u" => {
             let mut v: Vec<Scoreboard> = Vec::new();
@@ -442,8 +502,8 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                 if ss.len() == 4 || ss.len() == 5 {
                     let name = ss[0].to_string();
                     let connected: bool = ss[1] == "connected";
-                    let score = ss[2].parse::<i64>().unwrap_or(-1);
-                    let energy = ss[3].parse::<i8>().unwrap_or(0);
+                    let score = ss[2].parse::<i64>().unwrap_or(-123);
+                    let energy = ss[3].parse::<i8>().unwrap_or(-123);
                     let mut color = Color { r: 0, g: 0, b: 0, a: 0 };
                     if ss.len() == 5 {
                         color = Color::from_str(ss[4]);
@@ -488,7 +548,7 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                         new_name: cmd[2].to_string()
                     }
                 )
-            } else { RecvCommand::Invalid }
+            } else { RecvCommand::Invalid(cmd_str.to_string()) }
         },
         "h" => {
             RecvCommand::Hit(
@@ -504,6 +564,6 @@ fn parse_command(cmd_str: String) -> RecvCommand {
                 }
             )
         },
-        _ => {}
+        _ => RecvCommand::Invalid(cmd_str.to_string())
     }
 }

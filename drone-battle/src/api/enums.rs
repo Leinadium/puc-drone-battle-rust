@@ -1,10 +1,18 @@
-use crate::api::structs::{
-    ServerObservation, ServerStatus, ServerGameStatus,
-    ServerPlayer, ServerScoreboard, ServerNotification,
-    ServerPlayerNew, ServerPlayerLeft, ServerChangeName,
-    ServerHit, ServerDamage
-};
+use std::fmt::{self, Debug, Formatter, Result};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum Action {
+    FRONT,
+    BACK,
+    LEFT,
+    RIGHT,
+    GET,
+    SHOOT,
+    NOTHING
+}
+
+
+#[derive(Debug, Clone)]
 pub enum PlayerDirection {
     NORTH,
     EAST,
@@ -24,6 +32,7 @@ impl PlayerDirection {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum ServerState {
     READY,
     GAME,
@@ -33,23 +42,23 @@ pub enum ServerState {
 
 impl ServerState {
     pub fn from_str(st: &str) -> ServerState {
-        match st {
-            "1" => ServerState::READY,
-            "2" => ServerState::GAME,
-            "3" => ServerState::DEAD,
-            "4" => ServerState::GAMEOVER,
+        match st.to_lowercase().as_str() {
+            "ready" => ServerState::READY,
+            "game" => ServerState::GAME,
+            "dead" => ServerState::DEAD,
+            "gameover" => ServerState::GAMEOVER,
             _ => ServerState::READY
         }
     }
 }
 
-pub enum Observation {
-    ENEMYFRONT,
-    BLOCKED,
-    STEPS,
-    BREEZE,
-    FLASH,
-    TREASURE,
-    POWERUP
+impl fmt::Display for ServerState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        match self {
+            ServerState::READY => write!(f, "READY"),
+            ServerState::DEAD => write!(f, "DEAD"),
+            ServerState::GAME => write!(f, "GAME"),
+            ServerState::GAMEOVER => write!(f, "GAME OVER")
+        }
+    }
 }
-
