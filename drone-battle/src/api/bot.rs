@@ -3,7 +3,6 @@ use crate::api::comms::{GameServer, SendCommand, RecvCommand, ServerCommand};
 use crate::api::structs::{ServerPlayer, ServerScoreboard, LastObservation};
 use crate::api::enums::{PlayerDirection, ServerState, Action};
 use crate::api::config::Config;
-use crate::api::map::Field;
 
 use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -11,6 +10,7 @@ use std::time::{Duration, SystemTime, SystemTimeError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use crate::api::ai::AI;
 
 type ExitHandlerStruct = Arc<AtomicBool>;
 
@@ -27,17 +27,19 @@ type ExitHandlerStruct = Arc<AtomicBool>;
 /// bot.run();
 /// ```
 pub struct Bot {
+    /// AI
+    pub ai: AI,
     /// Current configuration of the bot
     pub config: Config,
     /// Server structure, containing the sender and receiver channels
     /// to be able to communicate with the GameServer thread
-    pub server: ServerChannels,
+    server: ServerChannels,
     /// A hashmap mapping all players to its node
-    pub player_list: HashMap<i64, ServerPlayer>,
+    player_list: HashMap<i64, ServerPlayer>,
     /// The complete scoreboard of a game
-    pub score_list: ServerScoreboard,
+    score_list: ServerScoreboard,
     /// Current time, provided by the server
-    pub game_time: i64,
+    game_time: i64,
     /// Last observation provided by the server
     pub last_observation: LastObservation,
     /// Current tick of the bot. A tick is considered a complete loop
@@ -53,17 +55,13 @@ pub struct Bot {
     /// Current score of the bot
     pub score: i64,
     /// Current energy of the bot
-    pub energy: i8,
+    pub energy: i32,
     /// Total time thinking for the next action
-    pub thinking_time: Duration,
+    thinking_time: Duration,
     /// Name of the last bot to damage the bot
-    pub last_damage: String,
+    last_damage: String,
     /// Time of the last damage to the bot
-    pub last_time_damage: SystemTime,
-
-    /// Field of the current game
-    pub field: Field,
-
+    last_time_damage: SystemTime,
     /// A struct to handle calls to close the bot
     exit_handler: ExitHandlerStruct,
     /// Handle of game server
@@ -90,6 +88,7 @@ impl Bot {
 
         // creating bot
         Bot {
+            ai: AI::new(),
             current_tick: 0,
             config,
             server: ServerChannels {tx: tx_client, rx: rx_client},
@@ -97,7 +96,6 @@ impl Bot {
             score_list: ServerScoreboard {scoreboards: Vec::new()},
             game_time: 0,
             last_observation: LastObservation::new(),
-            field: Field::new(),
             // default values below
             x: 0,
             y: 0,
@@ -127,7 +125,6 @@ impl Bot {
     ///
     /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
-        self.field.do_tick(&duration);
         if duration.as_millis() > 0 {
             thread::sleep(duration)
         }
@@ -138,6 +135,7 @@ impl Bot {
         println!("==== SCOREBOARD ====");
         println!("game_time: {}", self.game_time);
         println!("game_state: {}", self.state);
+        println!("====================");
         for sb in &self.score_list.scoreboards {
             println!(
                 "{} ({}): score={}, energy={}",
@@ -166,9 +164,7 @@ impl Bot {
         Ok(())
     }
 
-    /// Starts the infinite loop
-    ///
-    /// Can be only stopped by a CTRL-C
+    /// Starts the infinite loop. Can only be stopped by a CTRL-C
     pub fn run(&mut self) {
         let mut timer = 0;
         let mut exec_time;
@@ -190,7 +186,6 @@ impl Bot {
                 // update internal state
                 self.update_with_server();
 
-
                 // if the game is starting
                 if !playing {
                     playing = true;
@@ -202,7 +197,7 @@ impl Bot {
                 exec_time = SystemTime::now();
 
                 // do the action
-                // TODO: action = AI.think(&self)
+                action = self.ai.think_random(self);
                 GameServer::do_this_command(
                     &mut self.server.tx,
                     SendCommand::from_action(&action)
@@ -218,7 +213,6 @@ impl Bot {
                 self.update_with_server();
                 if playing { self.say_all_chat("gg".to_string()) }      // say gg once
                 playing = false;
-                self.field.reset();
 
                 // after some time, ask for scoreboard
                 if timer == 5 {

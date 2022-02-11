@@ -40,7 +40,7 @@ pub enum ServerCommand {
     OBSERVATION,
     GAMESTATUS,
     USERSTATUS,
-    POSITION,
+    // POSITION,    // not used
     SCOREBOARD,
     GOODBYE,
     NAME,
@@ -246,7 +246,7 @@ impl GameServer {
         loop {
             self.keep_alive();      // update self
 
-            let mut recv_buffer = [0; 1024];
+            let mut recv_buffer = [0; 4096];
             if self.connected {
                 // checking with server for new commands
                 let has_message = match self.server.as_mut().unwrap().read(&mut recv_buffer) {
@@ -461,7 +461,7 @@ fn parse_command(cmd_str: &String) -> RecvCommand {
                         dir: PlayerDirection::from_str(cmd[3]),
                         state: ServerState::from_str(cmd[4]),
                         score: cmd[5].parse::<i64>().unwrap_or(-123),
-                        energy: cmd[5].parse::<i8>().unwrap_or(-123),
+                        energy: cmd[6].parse::<i32>().unwrap_or(-123),
                     }
                 )
             } else { RecvCommand::Invalid(cmd_str.to_string()) }
@@ -503,7 +503,7 @@ fn parse_command(cmd_str: &String) -> RecvCommand {
                     let name = ss[0].to_string();
                     let connected: bool = ss[1] == "connected";
                     let score = ss[2].parse::<i64>().unwrap_or(-123);
-                    let energy = ss[3].parse::<i8>().unwrap_or(-123);
+                    let energy = ss[3].parse::<i32>().unwrap_or(-123);
                     let mut color = Color { r: 0, g: 0, b: 0, a: 0 };
                     if ss.len() == 5 {
                         color = Color::from_str(ss[4]);

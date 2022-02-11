@@ -42,11 +42,6 @@ impl Config {
 
         Ok(c)
     }
-
-    pub fn ticks_to_born(&self, tick_now: &i32, tick_old: &i32) -> i32 {
-        let total = (self.spawn_timer.as_millis() / self.normal_timer.as_millis()) as i32;
-        total - (tick_now - tick_old)
-    }
 }
 
 /// temp

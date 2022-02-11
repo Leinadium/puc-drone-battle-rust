@@ -98,7 +98,7 @@ pub struct Scoreboard {
     pub name: String,
     pub connected: bool,
     pub score: i64,
-    pub energy: i8,
+    pub energy: i32,
     pub color: Color,
 }
 
@@ -114,7 +114,7 @@ pub struct ServerStatus {
     pub dir: PlayerDirection,
     pub state: ServerState,
     pub score: i64,
-    pub energy: i8
+    pub energy: i32
 }
 
 #[derive(Debug, Clone)]
