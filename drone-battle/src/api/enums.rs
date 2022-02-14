@@ -12,7 +12,7 @@ pub enum Action {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub enum PlayerDirection {
     NORTH,
     EAST,
@@ -30,6 +30,26 @@ impl PlayerDirection {
             _ => PlayerDirection::NORTH
         }
     }
+
+    pub fn opposite(&self) -> PlayerDirection {
+        match self {
+            PlayerDirection::NORTH => PlayerDirection::SOUTH,
+            PlayerDirection::EAST => PlayerDirection::WEST,
+            PlayerDirection::SOUTH => PlayerDirection::NORTH,
+            PlayerDirection::WEST => PlayerDirection::EAST,
+        }
+    }
+
+    pub fn right(&self) -> PlayerDirection {
+        match self {
+            PlayerDirection::NORTH => PlayerDirection::EAST,
+            PlayerDirection::EAST => PlayerDirection::SOUTH,
+            PlayerDirection::SOUTH => PlayerDirection::WEST,
+            PlayerDirection::WEST => PlayerDirection::NORTH,
+        }
+    }
+
+    pub fn left(&self) -> PlayerDirection { self.right().opposite() }
 }
 
 #[derive(Debug, Clone, PartialEq)]

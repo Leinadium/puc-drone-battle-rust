@@ -88,7 +88,7 @@ impl Bot {
 
         // creating bot
         Bot {
-            ai: AI::new(),
+            ai: AI::new(&config),
             current_tick: 0,
             config,
             server: ServerChannels {tx: tx_client, rx: rx_client},
@@ -133,6 +133,7 @@ impl Bot {
 
     /// Prints the current scoreboard
     fn print_score(&self) {
+        println!("====================");
         println!("==== SCOREBOARD ====");
         println!("game_time: {}", self.game_time);
         println!("game_state: {}", self.state);
@@ -144,6 +145,7 @@ impl Bot {
                 sb.score, sb.energy
             );
         }
+        println!("====================");
         println!("====================");
     }
 
@@ -390,4 +392,28 @@ fn create_exit_handler() -> ExitHandlerStruct {
 /// Checks if the bot needs to be closed
 fn check_exit_handler(eh: &ExitHandlerStruct) -> bool {
     eh.load(Ordering::Relaxed)
+}
+
+
+pub trait Player {
+    fn get_x(&self) -> i8;
+    fn get_y(&self) -> i8;
+    fn get_energy(&self) -> i32;
+    fn get_tick(&self) -> i32;
+    fn get_dir(&self) -> PlayerDirection;
+    fn get_last_observation(&self) -> LastObservation;
+}
+
+impl Player for Bot {
+    fn get_x(&self) -> i8 { self.x.clone() }
+
+    fn get_y(&self) -> i8 { self.y.clone() }
+
+    fn get_energy(&self) -> i32 { self.energy.clone() }
+
+    fn get_tick(&self) -> i32 { self.current_tick.clone() }
+
+    fn get_dir(&self) -> PlayerDirection { self.dir.clone() }
+
+    fn get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
 }
