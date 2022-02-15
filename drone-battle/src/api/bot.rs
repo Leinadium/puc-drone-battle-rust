@@ -243,8 +243,14 @@ impl Bot {
                 timer += 1;
 
                 // asking for game status
-                GameServer::do_this_command(&mut self.server.tx,
+                GameServer::do_this_command(
+                    &mut self.server.tx,
                     SendCommand { command: ServerCommand::GAMESTATUS, attr: None}
+                ).ok();
+                // asking for game status
+                GameServer::do_this_command(
+                    &mut self.server.tx,
+                    SendCommand { command: ServerCommand::USERSTATUS, attr: None}
                 ).ok();
             }
         }

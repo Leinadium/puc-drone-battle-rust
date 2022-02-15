@@ -90,6 +90,7 @@ pub enum RecvCommand {
 }
 
 impl RecvCommand {
+    #[allow(dead_code)]
     pub fn to_string(&self) -> String {
         match self {
             RecvCommand::Observations(so) => {
