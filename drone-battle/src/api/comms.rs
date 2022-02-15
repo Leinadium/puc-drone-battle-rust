@@ -223,8 +223,7 @@ impl GameServer {
             println!("sucessfully connected with {}", ip);
 
             // setting up
-            self.server.as_mut()
-                .unwrap()
+            self.server.as_mut().unwrap()
                 .set_nonblocking(true)
                 .expect("set_nonblocking call failed");
             println!("connection with server is all set up");
@@ -251,10 +250,7 @@ impl GameServer {
                 // checking with server for new commands
                 let has_message = match self.server.as_mut().unwrap().read(&mut recv_buffer) {
                     Ok(size) => size > 0,
-                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(1));
-                        false
-                    },
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => false,
                     Err(e) => panic!("GameServer [ERROR]: thread_loop: error -> {}", e)
                 };
 
@@ -275,7 +271,7 @@ impl GameServer {
                 }
 
                 // checking with client for something
-                match self.recv_channel.try_recv() {
+                match self.recv_channel.recv_timeout(Duration::from_millis(5)) {
                     Ok(sc) => {
                         if let Err(e) = send_command(self.server.as_mut().unwrap(), sc.clone()) {
                             println!("GameServer [ERROR]: error sending command to server: {}", e);
@@ -288,11 +284,11 @@ impl GameServer {
                         }
 
                     },
-                    Err(mpsc::TryRecvError::Empty) => {},
-                    Err(mpsc::TryRecvError::Disconnected) => panic!("GameServer: client has disconnected")
+                    Err(mpsc::RecvTimeoutError::Timeout) => {},
+                    Err(mpsc::RecvTimeoutError::Disconnected) => panic!("GameServer: client has disconnected")
                 };
             }   // endif
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -377,7 +373,7 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Result<(), &str
         _ => return Ok(()),      // skipping
     };
 
-    println!("GameServer: sending to server -> {:?} (raw message: {})", &command, &msg);
+    // println!("GameServer: sending to server -> {:?} (raw message: {})", &command, &msg);
 
     // colocando o \n e botando em utf-8
     msg = format!("{}\n", msg);
@@ -416,7 +412,7 @@ fn parse_observations(observations: String) -> LastObservation {
             let temp: Vec<&str> = o.split("#").collect();
             if temp.len() > 1 {
                 last_observation.is_enemy_front = true;
-                last_observation.distance_enemy_front = temp[1].parse::<i32>().unwrap_or(0)
+                last_observation.distance_enemy_front = temp[1].parse::<i16>().unwrap_or(0)
             }
             match o {
                 "blocked" => last_observation.is_blocked = true,

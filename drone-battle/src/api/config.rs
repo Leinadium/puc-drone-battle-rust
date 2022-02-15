@@ -8,6 +8,7 @@ use std::io::Error;
 use std::time::Duration;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
+use rand::Rng;
 
 #[derive(Clone)]
 pub struct Config {
@@ -42,7 +43,7 @@ impl Config {
 
 
 #[derive(Serialize, Deserialize)]
-struct ConfigJSON {
+pub struct ConfigJSON {
     pub name: String,
     pub url: String,
     pub slow_timer: u64,
@@ -59,10 +60,10 @@ impl Config {
             name: random_string(10),
             url: "atari.icad.puc-rio.br".to_string(),
             slow_timer: Duration::from_millis(1000),
-            normal_timer: Duration::from_millis(200),
-            min_timer: Duration::from_millis(200),
-            default_color: Color {r: 23, g: 179, b: 132, a: 0 },
-            spawn_timer: Duration::from_millis(15600)
+            normal_timer: Duration::from_millis(100),
+            min_timer: Duration::from_millis(100),
+            default_color: random_color(),
+            spawn_timer: Duration::from_millis(15000)
         }
     }
 
@@ -86,4 +87,14 @@ fn random_string(size: usize) -> String {
         .collect();
 
     sample.join("")
+}
+
+fn random_color() -> Color {
+    let mut rng = rand::thread_rng();
+    Color {
+        r: rng.gen_range(0..255),
+        g: rng.gen_range(0..255),
+        b: rng.gen_range(0..255),
+        a: 0
+    }
 }

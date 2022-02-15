@@ -17,7 +17,7 @@ pub struct LastObservation {
     pub is_powerup: bool,
     pub is_damage: bool,
     pub is_hit: bool,
-    pub distance_enemy_front: i32,
+    pub distance_enemy_front: i16,
 
     pub has_read_hit: bool,       // because hit and damage observations are separate
     pub has_read_damage: bool,

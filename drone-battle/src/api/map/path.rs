@@ -1,8 +1,8 @@
-use crate::api::enums::{Action, PlayerDirection};
+use crate::api::enums::{Action};
 use crate::api::map::Coord;
 use crate::api::map::node::Node;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Path {
     pub actions: Vec<Action>,
     pub size: usize,
@@ -13,6 +13,10 @@ impl Path {
     pub fn pop_first_action(&mut self) {
         self.actions.remove(0);
         self.size -= 1;
+    }
+
+    pub fn get_first(&self) -> Action {
+        self.actions.first().unwrap_or(&Action::NOTHING).clone()
     }
 
     pub fn from_nodes(nodes: Vec<Node>) -> Option<Path> {
@@ -42,9 +46,10 @@ impl Path {
             previous = Some(node);        // update previous
         }
 
+        let size = v.len();
         Some(Path {
             actions: v,
-            size: v.len(),
+            size,
             dest: nodes.last()?.coord.clone()
         })
     }

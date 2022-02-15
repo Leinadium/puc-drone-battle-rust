@@ -1,22 +1,24 @@
 extern crate pathfinding;
 
+use std::borrow::Borrow;
 use std::time::Duration;
 use crate::api::enums::PlayerDirection;
-use crate::api::map::{Field, Coord, Position};
+use crate::api::map::{Field, Coord};
 use crate::api::map::{update, query};
 use crate::api::map::path::Path;
 use crate::api::map::node::Node;
 
 use pathfinding::prelude::astar;
+use ordered_float::OrderedFloat;
 
 
 pub fn a_star(f: &Field, origin: &Coord, dir: &PlayerDirection, dest: &Coord) -> Option<Path> {
     // running a_star
-    let p: Option<(Vec<Node>, f64)> = astar(
+    let p: Option<(Vec<Node>, OrderedFloat<f64>)> = astar(
         &Node { coord: origin.clone(), dir: dir.clone() },
-        |n: Node| n.neighbours(f),
-        |n: Node| n.distance_to_goal(dest),
-        |n: Node| n.coord == *dest
+        |n: &Node| n.neighbours(f),
+        |n: &Node| n.distance_to_goal(dest),
+        |n: &Node| n.coord == *dest
     );
 
     // constructing the path
@@ -25,7 +27,6 @@ pub fn a_star(f: &Field, origin: &Coord, dir: &PlayerDirection, dest: &Coord) ->
         Some(nodes) => Path::from_nodes(nodes.0)
     }
 }
-
 
 pub fn should_something_be_here(f: &mut Field, c: &Coord) {
     let has_gold: bool = f.gold_positions.contains_key(c);
@@ -45,41 +46,67 @@ pub fn should_something_be_here(f: &mut Field, c: &Coord) {
     }
 }
 
-
 pub fn gold_midpoint(f: &Field) -> Coord {
-    if !query::has_gold(f) { return f.spawn.unwrap_or( Coord{ x:0, y: 0} ).clone(); }
+    if !query::has_gold(f) { return f.spawn.as_ref().unwrap_or( &Coord{ x:0, y: 0} ).clone(); }
 
     let mut sum = Coord {x: 0, y: 0};
     for c in f.gold_positions.keys() { sum.add(c); }
 
-    let size = f.gold_positions.len();
+    let size = f.gold_positions.len() as i16;
 
     Coord { x: sum.x / size, y: sum.y / size }
 }
 
-pub fn best_block_using_midpoint(f: &Field, c_bot: &Coord, dir: &PlayerDirection, c_mid: &Coord) -> Coord {
-    let mut smallest_dist = 100000;
-    let mut ret = Coord {x: 0, y: 0};
+pub fn best_block_using_midpoint(f: &Field, c_bot: &Coord, dir: &PlayerDirection, c_mid: &Coord) -> Option<Path> {
+   let mut smallest_dist = 100000;
     let mut d;
-    let mut dist_mid;
-    let mut dist_bot;
+    let mut dist_block_point;
+    let mut path_ret: Option<Path> = None;
+    let mut temp_path;
 
     for c_safe in f.safe_positions.keys() {
         // getting distance from position to midpoint
-        let t: i32 = ((*c_safe.x - c_mid.x).pow(2) + (*c_safe.y - c_mid.y).pow(2));
-        dist_mid = (2 * (t as f32).sqrt()) as i32;
+        let t: f64 = ((c_safe.x - c_mid.x).pow(2) + (c_safe.y - c_mid.y).pow(2)) as f64;
+        dist_block_point = 2 * (t.sqrt() as i32);
 
         // getting distance from position to bot
-        dist_bot = match a_star(f, c_bot, dir, c_safe) {
-            Some(p) => p.size,
+        temp_path = match a_star(f, c_bot, dir, c_safe) {
+            Some(p) => p,
             None => continue,
-        } as i32;
+        };
 
-        d = dist_mid + dist_bot;
+        d = dist_block_point + (temp_path.size as i32);
         if d < smallest_dist {
-            ret = c_safe.clone();
             smallest_dist = d;
+            path_ret = Some(temp_path);
         }
     }
-    ret
+    path_ret
+}
+
+pub fn best_of_paths(f: &Field, c: &Coord, dir: &PlayerDirection, coords: Vec<Coord>, smallest: bool) -> Option<Path> {
+    let compare = if smallest { |c1, c2| { c1 < c2 } } else { |c1, c2| { c1 > c2 } };
+
+    let mut temp_path: Option<Path> = None;
+    let mut p;
+    for coord in coords {
+        // checking if there is a path
+
+        let mut update: bool = true;
+        p = match a_star(f, &c, &dir, &coord) {
+            None => continue,
+            Some(p) => p
+        };
+        if let Some(ref tp) = temp_path {
+            if !compare(p.borrow().size, tp.size) { update = false; }
+        }
+        if update { temp_path = Some(p); }
+
+    }
+    temp_path
+}
+
+pub fn closest_powerup(f: &Field, c: &Coord, dir: &PlayerDirection) -> Option<Coord> {
+    let v: Vec<Coord> = f.powerup_positions.keys().cloned().collect::<Vec<Coord>>();
+    Some(best_of_paths(f, c, dir, v, true)?.dest)
 }

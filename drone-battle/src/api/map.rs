@@ -1,20 +1,19 @@
-mod logic;
-mod query;
-mod update;
-mod node;
-mod path;
+pub mod logic;
+pub mod query;
+pub mod update;
+pub mod node;
+pub mod path;
 
-use crate::api::map::path::Path;
 use crate::api::enums::PlayerDirection;
 use crate::Config;
 
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use std::collections::HashMap;
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
 pub struct Coord {
-    x: u8,
-    y: u8
+    pub x: i16,
+    pub y: i16
 }
 
 impl Coord {
@@ -45,8 +44,8 @@ pub enum Position {
     POWERUP
 }
 
-pub const MAP_WIDTH: u8 = 59;
-pub const MAP_HEIGHT: u8 = 34;
+pub const MAP_WIDTH: i16 = 59;
+pub const MAP_HEIGHT: i16 = 34;
 
 
 pub struct Field {
@@ -91,7 +90,7 @@ impl Coord {
         ((self.x as i16 - c2.x as i16).abs() + (self.y as i16 - c2.y as i16).abs()) as u8
     }
 
-    pub fn coords_5x2_sides(&self, dir: PlayerDirection) -> Vec<Coord> {
+    pub fn coords_5x2_sides(&self, dir: &PlayerDirection) -> Vec<Coord> {
         match dir {
             PlayerDirection::NORTH | PlayerDirection::SOUTH => vec![
                 Coord { x: self.x-2, y: self.y-2 }, Coord { x: self.x-1, y: self.y-2 },

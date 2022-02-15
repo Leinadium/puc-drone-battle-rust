@@ -12,7 +12,7 @@ pub enum Action {
 }
 
 
-#[derive(Debug, Clone, Hash)]
+#[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq)]
 pub enum PlayerDirection {
     NORTH,
     EAST,
@@ -23,10 +23,10 @@ pub enum PlayerDirection {
 impl PlayerDirection {
     pub fn from_str(dir: &str) -> PlayerDirection {
         match dir {
-            "1" => PlayerDirection::NORTH,
-            "2" => PlayerDirection::EAST,
-            "3" => PlayerDirection::SOUTH,
-            "4" => PlayerDirection::WEST,
+            "north" => PlayerDirection::NORTH,
+            "east" => PlayerDirection::EAST,
+            "south" => PlayerDirection::SOUTH,
+            "west" => PlayerDirection::WEST,
             _ => PlayerDirection::NORTH
         }
     }

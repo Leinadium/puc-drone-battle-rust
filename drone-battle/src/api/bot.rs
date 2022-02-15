@@ -1,16 +1,18 @@
-use std::borrow::Borrow;
 use crate::api::comms::{GameServer, SendCommand, RecvCommand, ServerCommand};
 use crate::api::structs::{ServerPlayer, ServerScoreboard, LastObservation};
 use crate::api::enums::{PlayerDirection, ServerState, Action};
 use crate::api::config::Config;
+use crate::api::map::update;
+use crate::api::ai::AI;
 
-use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
+use std::sync::mpsc::{channel, Sender, Receiver, RecvTimeoutError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, SystemTimeError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use crate::api::ai::AI;
+use std::fmt::{Display, Formatter};
+use std::borrow::Borrow;
 
 type ExitHandlerStruct = Arc<AtomicBool>;
 
@@ -41,21 +43,21 @@ pub struct Bot {
     /// Current time, provided by the server
     game_time: i64,
     /// Last observation provided by the server
-    pub last_observation: LastObservation,
+    last_observation: LastObservation,
     /// Current tick of the bot. A tick is considered a complete loop
     pub current_tick: i32,
     /// Current x position of the bot
-    pub x: i8,
+    x: i16,
     /// Current y position of the bot
-    pub y: i8,
+    y: i16,
     /// Current direction of the bot
-    pub dir: PlayerDirection,
+    dir: PlayerDirection,
     /// Current state of the bot
-    pub state: ServerState,
+    state: ServerState,
     /// Current score of the bot
-    pub score: i64,
+    score: i64,
     /// Current energy of the bot
-    pub energy: i32,
+    energy: i32,
     /// Total time thinking for the next action
     thinking_time: Duration,
     /// Name of the last bot to damage the bot
@@ -125,10 +127,11 @@ impl Bot {
     ///
     /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
-        self.ai.field.do_tick(&duration);
-        if duration.as_millis() > 0 {
-            thread::sleep(duration)
-        }
+        update::do_tick(&mut self.ai.field, duration);
+        thread::sleep(duration.clone());
+        println!();
+        println!("[BOT] sleep: {} ms", duration.as_millis());
+
     }
 
     /// Prints the current scoreboard
@@ -180,16 +183,19 @@ impl Bot {
             // game is running
             if check_exit_handler(self.exit_handler.borrow()) { return }    // early exit
 
-            if self.state == ServerState::GAME {
+            if self.state == ServerState::GAME && self.energy > 0 {
                 // sleeping
                 if action == Action::SHOOT {    // only sleep the min time possible
-                    self.sleep(self.config.min_timer - self.thinking_time)
+                    self.sleep(
+                        self.config.min_timer.clone()
+                            .checked_sub(self.thinking_time)
+                            .unwrap_or(Duration::from_millis(0)))
                 } else {                        // sleep normally
-                    self.sleep(self.config.normal_timer - self.thinking_time)
+                    self.sleep(self.config.normal_timer.clone()
+                        .checked_sub(self.thinking_time)
+                        .unwrap_or(Duration::from_millis(0)))
                 }
-
-                // update internal state
-                self.update_with_server();
+                println!("[BOT] thinking_time: {} ms", self.thinking_time.as_millis());
 
                 // if the game is starting
                 if !playing {
@@ -197,12 +203,17 @@ impl Bot {
                     self.restart();
                 }
 
+                // update internal state
+                self.update_with_server(true);
+
                 // updating variables
                 self.current_tick += 1;
                 exec_time = SystemTime::now();
 
                 // do the action
-                action = self.ai.think_random(self);
+                let data = BotData::from_bot(&self);
+                println!("[BOT] bot_data: {}", &data);
+                action = self.ai.think(data);
                 GameServer::do_this_command(
                     &mut self.server.tx,
                     SendCommand::from_action(&action)
@@ -215,7 +226,7 @@ impl Bot {
             // game is NOT running
             else {
                 self.sleep(self.config.slow_timer);                 // sleep a bit
-                self.update_with_server();
+                self.update_with_server(false);
                 if playing { self.say_all_chat("gg".to_string()) }      // say gg once
                 playing = false;
                 self.ai.field.restart();
@@ -225,7 +236,7 @@ impl Bot {
                     GameServer::do_this_command(&mut self.server.tx,
                         SendCommand { command: ServerCommand::SCOREBOARD, attr: None}
                     ).ok();
-                    self.update_with_server();
+                    self.update_with_server(false);
                     self.print_score();
                     timer = 0;
                 }
@@ -262,6 +273,11 @@ impl Bot {
     /// Resets some variables, and send some initial commands to the server
     fn restart(&mut self) {
         self.current_tick = 0;
+        // asking for game status
+        GameServer::do_this_command(
+            &mut self.server.tx,
+            SendCommand { command: ServerCommand::GAMESTATUS, attr: None}
+        ).ok();
         // asking for my status
         GameServer::do_this_command(
             &mut self.server.tx,
@@ -287,24 +303,20 @@ impl Bot {
     }
 
     /// Get all responses from the server, and updates all internal variables
-    fn update_with_server(&mut self) {
+    fn update_with_server(&mut self, mut needs_checklist: bool) {
+        let mut checklist: ServerChecklist = ServerChecklist::new();
         loop {
-            let attempt = self.server.rx.try_recv();
-            let rc: RecvCommand;
-            if let Err(e) = attempt {
-                match e {
-                    TryRecvError::Empty => break,
-                    TryRecvError::Disconnected => {
-                        println!("Bot [ERROR]: recv error -> {}", e);
-                        break;
-                    }
-                }
-            } else {
-                rc = attempt.unwrap();
-            }
-            println!("Bot: received from GameServer -> {}", rc.to_string());
+            let attempt = self.server.rx.recv_timeout(Duration::from_millis(5));
+            let rc: RecvCommand = match attempt {
+                Err(RecvTimeoutError::Timeout) => if !needs_checklist { break } else { continue },
+                Err(RecvTimeoutError::Disconnected) => { println!("[BOT ERROR]: recv error"); break; },
+                Ok(x) => x
+            };
+
+            // println!("[BOT INFO] received from GameServer -> {}", rc.to_string());
             match rc {
                 RecvCommand::Observations(so) => {
+                    checklist.observation = true;
                     // checking first if it can overwrite the hit or damage observations
                     let ishit = self.last_observation.is_hit;
                     let isdamage = self.last_observation.is_damage;
@@ -321,8 +333,9 @@ impl Bot {
                     }
                 },
                 RecvCommand::Status(ss) => {
-                    self.x = ss.x;
-                    self.y = ss.y;
+                    checklist.user = true;
+                    self.x = ss.x as i16;
+                    self.y = ss.y as i16;
                     self.dir = ss.dir.clone();
                     self.state = ss.state.clone();
                     self.score = ss.score;
@@ -332,8 +345,10 @@ impl Bot {
                     self.player_list.insert(sp.node, sp.clone());
                 }
                 RecvCommand::GameStatus(sgs) => {
+                    checklist.game = true;
                     self.state = sgs.status.clone();
                     self.game_time = sgs.time;
+                    if sgs.status != ServerState::GAME { needs_checklist = false; }  // skip waiting, game is over
                 }
                 RecvCommand::Scoreboard(ss) => {
                     self.score_list = ss.clone();
@@ -363,9 +378,13 @@ impl Bot {
                 }
                 RecvCommand::Invalid(_) => {}
             }
-        }
-    }
 
+            // checking checklist
+            if needs_checklist && checklist.check() { break; }
+
+        }
+
+    }
 }
 
 /// Helper struct, to gather both ways of the channel
@@ -394,26 +413,57 @@ fn check_exit_handler(eh: &ExitHandlerStruct) -> bool {
     eh.load(Ordering::Relaxed)
 }
 
-
-pub trait Player {
-    fn get_x(&self) -> i8;
-    fn get_y(&self) -> i8;
-    fn get_energy(&self) -> i32;
-    fn get_tick(&self) -> i32;
-    fn get_dir(&self) -> PlayerDirection;
-    fn get_last_observation(&self) -> LastObservation;
+#[derive(Debug)]
+pub struct BotData {
+    x: i16,
+    y: i16,
+    dir: PlayerDirection,
+    energy: i32,
+    last_observation: LastObservation,
 }
 
-impl Player for Bot {
-    fn get_x(&self) -> i8 { self.x.clone() }
+impl BotData {
+    pub fn from_bot(bot: &Bot) -> BotData {
+        BotData {
+            x: bot.x.clone(),
+            y: bot.y.clone(),
+            dir: bot.dir.clone(),
+            energy: bot.energy.clone(),
+            last_observation: bot.last_observation.clone()
+        }
+    }
 
-    fn get_y(&self) -> i8 { self.y.clone() }
+    pub fn get_x(&self) -> i16 { self.x.clone() }
 
-    fn get_energy(&self) -> i32 { self.energy.clone() }
+    pub fn get_y(&self) -> i16 { self.y.clone() }
 
-    fn get_tick(&self) -> i32 { self.current_tick.clone() }
+    pub fn get_energy(&self) -> i32 { self.energy.clone() }
 
-    fn get_dir(&self) -> PlayerDirection { self.dir.clone() }
+    pub fn get_dir(&self) -> PlayerDirection { self.dir.clone() }
 
-    fn get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
+    pub fn get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
+
+}
+
+impl Display for BotData {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(x: {}, y: {}, dir: {:?}, en: {}, lo: {}",
+               self.x, self.y, self.dir, self.energy, self.last_observation.to_string())
+    }
+}
+
+struct ServerChecklist {
+    pub observation: bool,
+    pub user: bool,
+    pub game: bool,
+}
+
+impl ServerChecklist {
+    pub fn new() -> ServerChecklist {
+        ServerChecklist { observation: false, user: false, game: false }
+    }
+
+    pub fn check(&self) -> bool {
+        self.observation && self.game && self.user
+    }
 }
