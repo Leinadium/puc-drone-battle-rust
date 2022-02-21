@@ -1,6 +1,6 @@
 {
-  "name": "TGVpbmFkaXVt",
-  "url": "atari.icad.puc-rio.br",
+  "name": "Leinadium",
+  "url": "baffa.zapto.org",
   "slow_timer": 1000,
   "normal_timer": 100,
   "min_timer": 100,
@@ -10,5 +10,6 @@
     "b": 132,
     "a": 0
   },
-  "spawn_timer": 15000
+  "spawn_timer": 18000,
+  "graphics": true
 }

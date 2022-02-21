@@ -46,15 +46,24 @@ pub fn should_something_be_here(f: &mut Field, c: &Coord) {
     }
 }
 
-pub fn gold_midpoint(f: &Field) -> Coord {
+pub fn gold_midpoint(f: &mut Field) -> Coord {
     if !query::has_gold(f) { return f.spawn.as_ref().unwrap_or( &Coord{ x:0, y: 0} ).clone(); }
+
+    // check buffer
+    if f.gold_positions.len() == f.buffer_midpoint_size {
+        return f.buffer_midpoint_coord.clone()
+    }
 
     let mut sum = Coord {x: 0, y: 0};
     for c in f.gold_positions.keys() { sum.add(c); }
-
     let size = f.gold_positions.len() as i16;
+    let ret = Coord { x: sum.x / size, y: sum.y / size };
 
-    Coord { x: sum.x / size, y: sum.y / size }
+    // update buffer
+    f.buffer_midpoint_coord = ret.clone();
+    f.buffer_midpoint_size = f.gold_positions.len();
+
+    ret
 }
 
 pub fn best_block_using_midpoint(f: &Field, c_bot: &Coord, dir: &PlayerDirection, c_mid: &Coord) -> Option<Path> {

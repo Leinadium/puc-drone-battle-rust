@@ -6,12 +6,17 @@ use crate::api::map::node::Node;
 pub struct Path {
     pub actions: Vec<Action>,
     pub size: usize,
-    pub dest: Coord
+    pub dest: Coord,
+    pub coords: Vec<Coord>,
 }
 
 impl Path {
     pub fn pop_first_action(&mut self) {
-        self.actions.remove(0);
+        let a = self.actions.remove(0);
+        match a {
+            Action::FRONT | Action::BACK => {self.coords.remove(0);},
+            _ => {},
+        }
         self.size -= 1;
     }
 
@@ -22,13 +27,20 @@ impl Path {
     pub fn from_nodes(nodes: Vec<Node>) -> Option<Path> {
         let mut v: Vec<Action> = Vec::new();
         let mut previous: Option<&Node> = None;
+        let mut v_coords: Vec<Coord> = vec![];
 
         // getting the actions
         for node in nodes.iter() {
             let p = match previous {
-                None => { previous = Some(node); continue }
+                None => {
+                    previous = Some(node);
+                    v_coords.push(node.coord.clone());
+                    continue
+                }
                 Some(n) => n
             };
+
+            if node.coord != p.coord { v_coords.push(node.coord.clone()) }
 
             if p.coord.next(&p.dir) == node.coord {
                 v.push(Action::FRONT)       // front?
@@ -50,7 +62,8 @@ impl Path {
         Some(Path {
             actions: v,
             size,
-            dest: nodes.last()?.coord.clone()
+            dest: nodes.last()?.coord.clone(),
+            coords: v_coords
         })
     }
 }

@@ -18,7 +18,8 @@ pub struct Config {
     pub normal_timer: Duration,
     pub min_timer: Duration,
     pub default_color: Color,
-    pub spawn_timer: Duration
+    pub spawn_timer: Duration,
+    pub graphics: bool,
 }
 
 impl Config {
@@ -37,6 +38,7 @@ impl Config {
                 a: c.default_color.get("a").unwrap_or(&default_color.a).clone(),
             },
             spawn_timer: Duration::from_millis(c.spawn_timer),
+            graphics: c.graphics
         }
     }
 }
@@ -50,7 +52,8 @@ pub struct ConfigJSON {
     pub normal_timer: u64,
     pub min_timer: u64,
     pub default_color: HashMap<String, u8>,
-    pub spawn_timer: u64
+    pub spawn_timer: u64,
+    pub graphics: bool
 }
 
 
@@ -58,12 +61,13 @@ impl Config {
     pub fn default() -> Config {
         Config {
             name: random_string(10),
-            url: "atari.icad.puc-rio.br".to_string(),
+            url: "baffa.zapto.org".to_string(),
             slow_timer: Duration::from_millis(1000),
             normal_timer: Duration::from_millis(100),
             min_timer: Duration::from_millis(100),
             default_color: random_color(),
-            spawn_timer: Duration::from_millis(15000)
+            spawn_timer: Duration::from_millis(15000),
+            graphics: true
         }
     }
 

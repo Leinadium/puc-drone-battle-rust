@@ -12,7 +12,7 @@ pub struct AI {
     pub field: Field,
 
     // base variables
-    current_state: BotState,
+    pub current_state: BotState,
     current_action: Action,
 
     // advanced variables
@@ -25,11 +25,14 @@ pub struct AI {
 
     // for exploration
     previous_state: BotState,
-    current_path: Option<Path>,
+    pub current_path: Option<Path>,
+
+    // graphics
+    verbose: bool
 }
 
 impl AI {
-    pub fn new(config: &Config) -> AI {
+    pub fn new(config: &Config, verbose: bool) -> AI {
         AI {
             field: Field::new(config),
             current_state: BotState::EXPLORE,
@@ -42,6 +45,7 @@ impl AI {
             previous_state: BotState::NONE,
             current_path: None,
             buffer_path: None,
+            verbose
         }
     }
 
@@ -69,11 +73,12 @@ impl AI {
         if self.current_state != BotState::ATTACK { self.ticks_attacking = 0; }
         self.c_buffer = Coord {x: bot.get_x(), y: bot.get_y() };
 
-        println!("[AI] safe_positions: {}", self.field.safe_positions.len());
-        println!("[AI] map_changed: {:?} | previous_state: {:?}", &self.map_changed, &self.previous_state);
-        println!("[AI] path: {:?}", &self.current_path);
-        println!("[AI] current_state: {:?} | current_action: {:?}", &self.current_state, &self.current_action);
-
+        if self.verbose {
+            println!("[AI] safe_positions: {}", self.field.safe_positions.len());
+            println!("[AI] map_changed: {:?} | previous_state: {:?}", &self.map_changed, &self.previous_state);
+            println!("[AI] path: {:?}", &self.current_path);
+            println!("[AI] current_state: {:?} | current_action: {:?}", &self.current_state, &self.current_action);
+        }
         self.current_action.clone()
     }
 
@@ -95,7 +100,8 @@ impl AI {
         }
 
         // if the bot for some reason walks into a flash and teleports, update that position as a flash
-        if ((c.x - self.c_buffer.x) + (c.y - self.c_buffer.y)) > 3 {
+        // ELSE to not set danger with invalid buffer on spawn
+        else if ((c.x - self.c_buffer.x) + (c.y - self.c_buffer.y)) > 3 {
             update::set(f_mut, self.c_buffer.clone(), Position::DANGER, true);
             self.map_changed = true;
         }
@@ -320,16 +326,16 @@ impl AI {
                     self.current_action = dest.get_first();
                     self.going_to_powerup = false;
                 } else {
-                    println!("AI [ERROR]: cannot find close block to explore while in need to recharge");
+                    println!("[AI ERROR]: cannot find close block to explore while in need to recharge");
                     self.do_explore(bot);
                 }
             } else {
-                println!("AI [ERROR]: recharge bug");
+                println!("[AI ERROR]: recharge bug");
                 self.do_explore(bot);
             }
         }
         else {
-            println!("AI [INFO]: while recharging, no powerup to collect or error");
+            println!("[AI INFO]: while recharging, no powerup to collect or error");
             self.do_explore(bot);
         }
     }
@@ -338,19 +344,18 @@ impl AI {
         // buffering from last move
         if let Some(cp) = &self.current_path {
             if self.previous_state == BotState::EXPLORE && !self.map_changed && cp.size > 1 {
-                println!("[AI]: (explore) buffering from last move");
+                if self.verbose {println!("[AI]: (explore) buffering from last move");}
                 self.current_path.as_mut().unwrap().pop_first_action();
                 self.current_action = self.current_path.as_ref().unwrap().get_first();
                 return;
             }
         }
-        let f: &Field = &self.field;
+        let f: &mut Field = &mut self.field;
         let c: Coord = Coord { x: bot.get_x(), y: bot.get_y() };
         let dir: PlayerDirection = bot.get_dir();
 
 
         let midpoint: Coord = logic::gold_midpoint(f);
-        println!("[AI]: midpoint: ({}, {})", midpoint.x, midpoint.y);
 
         if let Some(p) = logic::best_block_using_midpoint(f, &c, &dir, &midpoint) {
             self.current_action = p.get_first();
@@ -363,11 +368,24 @@ impl AI {
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
-enum BotState {
+pub enum BotState {
     RUN,
     ATTACK,
     COLLECT,
     EXPLORE,
     RECHARGE,
     NONE
+}
+
+impl BotState {
+    pub fn to_string(&self) -> String {
+        match self {
+            BotState::RUN => "RUN".to_string(),
+            BotState::EXPLORE => "EXPLORE".to_string(),
+            BotState::ATTACK => "ATTACK".to_string(),
+            BotState::COLLECT => "COLLECT".to_string(),
+            BotState::RECHARGE => "RECHARGE".to_string(),
+            BotState::NONE => "NONE".to_string(),
+        }
+    }
 }

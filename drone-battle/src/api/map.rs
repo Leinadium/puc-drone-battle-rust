@@ -44,6 +44,20 @@ pub enum Position {
     POWERUP
 }
 
+impl Position {
+    pub fn to_string(&self) -> String {
+        match self {
+            Position::SAFE => "SAFE".to_string(),
+            Position::EMPTY => "EMPTY".to_string(),
+            Position::DANGER => "DANGER".to_string(),
+            Position::UNKNOWN => "UNKNOWN".to_string(),
+            Position::WALL => "WALL".to_string(),
+            Position::GOLD => "GOLD".to_string(),
+            Position::POWERUP => "POWERUP".to_string(),
+        }
+    }
+}
+
 pub const MAP_WIDTH: i16 = 59;
 pub const MAP_HEIGHT: i16 = 34;
 
@@ -57,6 +71,9 @@ pub struct Field {
     pub config: Config,
     pub spawn: Option<Coord>,
 
+    pub buffer_midpoint_size: usize,
+    pub buffer_midpoint_coord: Coord,
+
 }
 
 impl Field {
@@ -67,13 +84,16 @@ impl Field {
             powerup_positions: HashMap::new(),
             safe_positions: HashMap::new(),
             unsafe_positions: HashMap::new(),
-            spawn: None ,
-            config: config.clone()
+            spawn: None,
+            config: config.clone(),
+            buffer_midpoint_size: 0,
+            buffer_midpoint_coord: Coord {x: 0, y: 0}
         }
     }
 
     pub fn set_spawn(&mut self, c: &Coord) {
         self.spawn = Some(c.clone());
+        self.buffer_midpoint_coord = c.clone();
     }
 
     pub fn restart(&mut self) {
@@ -82,6 +102,9 @@ impl Field {
         self.powerup_positions.clear();
         self.safe_positions.clear();
         self.unsafe_positions.clear();
+        self.spawn = None;
+        self.buffer_midpoint_size = 0;
+        self.buffer_midpoint_coord = Coord {x: 0, y: 0}
     }
 }
 

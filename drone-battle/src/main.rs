@@ -2,6 +2,7 @@ mod api;
 
 use crate::api::config::Config;
 use crate::api::bot::Bot;
+use crate::api::graphics::Graphics;
 
 use std::env::args;
 
@@ -25,8 +26,16 @@ fn main() {
         config = Config::default();
     }
 
+
+
     // running the bot
-    let mut bot = Bot::new(config);
+    let graphics = match config.graphics {
+        true => Graphics::new(config.name.clone()),
+        false => None
+    };
+    println!("Graphics is set to {}", graphics.is_some());
+
+    let mut bot = Bot::new(config, graphics);
     bot.run();
 
     bot.exit();

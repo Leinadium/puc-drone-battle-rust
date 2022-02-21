@@ -1,6 +1,6 @@
 use std::fmt::{self, Debug, Formatter, Result};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, )]
 pub enum Action {
     FRONT,
     BACK,
@@ -28,6 +28,16 @@ impl PlayerDirection {
             "south" => PlayerDirection::SOUTH,
             "west" => PlayerDirection::WEST,
             _ => PlayerDirection::NORTH
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            PlayerDirection::NORTH => "NORTH".to_string(),
+            PlayerDirection::EAST => "EAST".to_string(),
+            PlayerDirection::SOUTH => "SOUTH".to_string(),
+            PlayerDirection::WEST => "WEST".to_string(),
+
         }
     }
 

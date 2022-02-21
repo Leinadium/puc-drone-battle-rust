@@ -4,8 +4,9 @@ use crate::api::enums::{PlayerDirection, ServerState, Action};
 use crate::api::config::Config;
 use crate::api::map::update;
 use crate::api::ai::AI;
+use crate::api::graphics::Graphics;
 
-use std::sync::mpsc::{channel, Sender, Receiver, RecvTimeoutError};
+use crossbeam_channel::{unbounded, Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime, SystemTimeError};
 use std::collections::HashMap;
@@ -67,7 +68,9 @@ pub struct Bot {
     /// A struct to handle calls to close the bot
     exit_handler: ExitHandlerStruct,
     /// Handle of game server
-    thread_handle: JoinHandle<()>
+    thread_handle: JoinHandle<()>,
+
+    graphics: Option<Graphics>,
 
 }
 
@@ -77,20 +80,21 @@ impl Bot {
     /// Also starts a `api::comms::GameServer` thread to communicate
     /// with the server.
     /// Use `.exit()`, that sends a command to close the thread, to end it.
-    pub fn new(config: Config) -> Bot {
+    pub fn new(config: Config, graphics: Option<Graphics>) -> Bot {
         // creating server listener
-        let (tx_client, rx_server) = channel::<SendCommand>();
-        let (tx_server, rx_client) = channel::<RecvCommand>();
-        let mut game_server = GameServer::new(rx_server, tx_server, &config);
+        let (tx_client, rx_server) = unbounded::<SendCommand>();
+        let (tx_server, rx_client) = unbounded::<RecvCommand>();
+        let game_server = GameServer::new(rx_server, tx_server, &config);
         // starting server listener
         let url_copy = config.url.clone();
-        let join_handle = thread::spawn(move || {
-            game_server.start(url_copy.as_str(), None)
-        });
+        let join_handle = thread::Builder::new()
+            .name("GAMESERVER".into())
+            .spawn(move || { game_server.run(url_copy.as_str(), None) })
+            .unwrap();
 
         // creating bot
         Bot {
-            ai: AI::new(&config),
+            ai: AI::new(&config, graphics.is_none()),
             current_tick: 0,
             config,
             server: ServerChannels {tx: tx_client, rx: rx_client},
@@ -109,29 +113,32 @@ impl Bot {
             last_damage: "".to_string(),
             last_time_damage: SystemTime::now(),
             exit_handler: create_exit_handler(),
-            thread_handle: join_handle
+            thread_handle: join_handle,
+            graphics
         }
     }
 
     /// Closes the GameServer thread.
     /// Also consumes itself.
     pub fn exit(mut self) {
+        if let Some(g) = self.graphics { g.close(); }
         GameServer::do_this_command(
             &mut self.server.tx,
             SendCommand { command: ServerCommand::GOODBYE, attr: None}
         ).ok();
-        self.thread_handle.join().expect("Bot [ERROR]: could not join game server thread");
+        self.thread_handle.join().expect("[BOT ERROR]: could not join game server thread");
     }
 
     /// Puts the bot to sleep for some duration. It skips negative durations
     ///
     /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
-        update::do_tick(&mut self.ai.field, duration);
-        thread::sleep(duration.clone());
-        println!();
-        println!("[BOT] sleep: {} ms", duration.as_millis());
-
+        update::do_tick(&mut self.ai.field, self.config.normal_timer.clone());
+        spin_sleep::sleep(duration.clone());
+        if self.graphics.is_none() {
+            println!();
+            println!("[BOT] sleep: {} ms", duration.as_millis());
+        }
     }
 
     /// Prints the current scoreboard
@@ -195,8 +202,8 @@ impl Bot {
                         .checked_sub(self.thinking_time)
                         .unwrap_or(Duration::from_millis(0)))
                 }
-                println!("[BOT] thinking_time: {} ms", self.thinking_time.as_millis());
-
+                exec_time = SystemTime::now();
+				
                 // if the game is starting
                 if !playing {
                     playing = true;
@@ -205,14 +212,15 @@ impl Bot {
 
                 // update internal state
                 self.update_with_server(true);
+                // println!("[BOT] thinking_time before action: {} ms", exec_time.elapsed().unwrap_or(Duration::from_millis(0)).as_millis());
 
                 // updating variables
                 self.current_tick += 1;
-                exec_time = SystemTime::now();
+                
 
                 // do the action
                 let data = BotData::from_bot(&self);
-                println!("[BOT] bot_data: {}", &data);
+                if self.graphics.is_none() {println!("[BOT] bot_data: {}", &data);}
                 action = self.ai.think(data);
                 GameServer::do_this_command(
                     &mut self.server.tx,
@@ -222,6 +230,8 @@ impl Bot {
                 // after doing the action
                 self.after_action();
                 self.thinking_time = exec_time.elapsed().unwrap_or(Duration::from_secs(0));
+                // println!("[BOT] thinking_time: {} ms", self.thinking_time.as_millis());
+
             }
             // game is NOT running
             else {
@@ -258,22 +268,34 @@ impl Bot {
 
     /// Helper method, containing the actions to be done after sending an action
     fn after_action(&mut self) {
+        if self.graphics.is_some() {
+            let botdata = BotData::from_bot(&self);
+            self.graphics.as_mut().unwrap().update(
+                &botdata,
+                &self.ai,
+                &self.ai.field
+            );
+        }
         self.last_observation.reset();
         // asking for some observations
         GameServer::do_this_command(
             &mut self.server.tx,
             SendCommand { command: ServerCommand::OBSERVATION, attr: None}
         ).ok();
+        // println!("[BOT] sent observation at {}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() % 10000);
         // asking for my status
         GameServer::do_this_command(
             &mut self.server.tx,
             SendCommand { command: ServerCommand::USERSTATUS, attr: None}
         ).ok();
+        // println!("[BOT] sent userstatus at {}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() % 10000);
         // asking for game status
         GameServer::do_this_command(
             &mut self.server.tx,
             SendCommand { command: ServerCommand::GAMESTATUS, attr: None}
         ).ok();
+        // println!("[BOT] sent gamestatus at {}", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() % 10000);
+
     }
 
     /// Resets some variables, and send some initial commands to the server
@@ -311,11 +333,16 @@ impl Bot {
     /// Get all responses from the server, and updates all internal variables
     fn update_with_server(&mut self, mut needs_checklist: bool) {
         let mut checklist: ServerChecklist = ServerChecklist::new();
+        // let exec_time = SystemTime::now();
         loop {
-            let attempt = self.server.rx.recv_timeout(Duration::from_millis(5));
+            // println!("[BOT] before recv: {} ms", exec_time.elapsed().unwrap_or(Duration::from_millis(0)).as_millis());
+            let attempt = self.server.rx.try_recv();
+
             let rc: RecvCommand = match attempt {
-                Err(RecvTimeoutError::Timeout) => if !needs_checklist { break } else { continue },
-                Err(RecvTimeoutError::Disconnected) => { println!("[BOT ERROR]: recv error"); break; },
+                Err(TryRecvError::Empty) => if !needs_checklist { break } else {
+                    continue
+                },
+                Err(TryRecvError::Disconnected) => { println!("[BOT ERROR]: recv error"); break; },
                 Ok(x) => x
             };
 
@@ -360,25 +387,25 @@ impl Bot {
                     self.score_list = ss.clone();
                 }
                 RecvCommand::Notification(sn) => {
-                    println!("Bot [INFO]: {}", sn.notification);
+                    println!("[BOT LOG]: {}", sn.notification);
                 }
                 RecvCommand::PlayerNew(spn) => {
-                    println!("Bot [INFO]: [{}] has joined the game", spn.player);
+                    println!("[BOT LOG]: [{}] has joined the game", spn.player);
                 }
                 RecvCommand::PlayerLeft(spl) => {
-                    println!("Bot [INFO]: [{}] has left the game", spl.player);
+                    println!("[BOT LOG]: [{}] has left the game", spl.player);
                 }
                 RecvCommand::ChangeName(scn) => {
-                    println!("Bot [INFO]: [{}] changed its name to [{}]", scn.old_name, scn.new_name);
+                    println!("[BOT LOG]: [{}] changed its name to [{}]", scn.old_name, scn.new_name);
                 }
                 RecvCommand::Hit(sh) => {
-                    println!("BOT [HIT]: I hit [{}]", sh.target);
+                    println!("[BOT LOG]: I hit [{}]", sh.target);
                     self.last_observation.is_hit = true;
                     self.last_observation.has_read_hit = false;
                 }
                 RecvCommand::Damage(sd) => {
                     self.anti_cheat(sd.shooter.clone()).ok();
-                    println!("BOT [DAMAGE]: [{}] damaged me", sd.shooter);
+                    println!("[BOT DAMAGE]: [{}] damaged me", sd.shooter);
                     self.last_observation.is_damage = true;
                     self.last_observation.has_read_damage = false;
                 }
@@ -419,13 +446,14 @@ fn check_exit_handler(eh: &ExitHandlerStruct) -> bool {
     eh.load(Ordering::Relaxed)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BotData {
     x: i16,
     y: i16,
     dir: PlayerDirection,
     energy: i32,
     last_observation: LastObservation,
+    score: i64
 }
 
 impl BotData {
@@ -435,7 +463,8 @@ impl BotData {
             y: bot.y.clone(),
             dir: bot.dir.clone(),
             energy: bot.energy.clone(),
-            last_observation: bot.last_observation.clone()
+            last_observation: bot.last_observation.clone(),
+            score: bot.score.clone()
         }
     }
 
@@ -448,6 +477,8 @@ impl BotData {
     pub fn get_dir(&self) -> PlayerDirection { self.dir.clone() }
 
     pub fn get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
+
+    pub fn get_score(&self) -> i64 { self.score.clone() }
 
 }
 

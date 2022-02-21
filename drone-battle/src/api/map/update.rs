@@ -24,10 +24,7 @@ pub fn set(f: &mut Field, c: Coord, p: Position, force: bool) {
     match p {
         Position::DANGER => {
             if current_position == Position::UNKNOWN {
-                println!("[FIELD] DANGER in ({}, {})", c.x, c.y);
                 f.map.insert(c.clone(), p);
-            } else {
-                println!("[FIELD] received DANGER, but had {:?} in ({}, {})", current_position, c.x, c.y);
             }
             return;
         },
@@ -52,12 +49,12 @@ pub fn set(f: &mut Field, c: Coord, p: Position, force: bool) {
 }
 
 pub fn set_gold(f: &mut Field, c: Coord) {
-    println!("[FIELD] GOLD in ({}, {})", c.x, c.y);
+    // println!("[FIELD] GOLD in ({}, {})", c.x, c.y);
     f.gold_positions.insert(c, Duration::from_secs(0));
 }
 
 pub fn set_powerup(f: &mut Field, c: Coord) {
-    println!("[FIELD] POWERUP in ({}, {})", c.x, c.y);
+    // println!("[FIELD] POWERUP in ({}, {})", c.x, c.y);
     f.powerup_positions.insert(c, Duration::from_secs(0));
 }
 
