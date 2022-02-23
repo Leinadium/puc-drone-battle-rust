@@ -9,6 +9,7 @@ use crate::Config;
 
 use std::time::Duration;
 use std::collections::HashMap;
+use std::fmt;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, PartialOrd, Ord)]
 pub struct Coord {
@@ -29,6 +30,12 @@ impl Coord {
             PlayerDirection::SOUTH => Coord { x: self.x, y: self.y + 1 },
             PlayerDirection::WEST => Coord { x: self.x - 1, y: self.y },
         }
+    }
+}
+
+impl fmt::Display for Coord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
     }
 }
 

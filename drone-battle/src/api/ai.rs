@@ -76,7 +76,7 @@ impl AI {
         if self.verbose {
             println!("[AI] safe_positions: {}", self.field.safe_positions.len());
             println!("[AI] map_changed: {:?} | previous_state: {:?}", &self.map_changed, &self.previous_state);
-            println!("[AI] path: {:?}", &self.current_path);
+            println!("[AI] path: {:?}", match &self.current_path { Some(p) => p.to_string(), None => "{ }".to_string() });
             println!("[AI] current_state: {:?} | current_action: {:?}", &self.current_state, &self.current_action);
         }
         self.current_action.clone()

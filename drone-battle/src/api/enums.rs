@@ -11,6 +11,20 @@ pub enum Action {
     NOTHING
 }
 
+impl Action {
+    pub fn to_str(&self) -> &str {
+        match self {
+            Action::FRONT => "FRONT",
+            Action::BACK => "BACK",
+            Action::LEFT => "LEFT",
+            Action::RIGHT => "RIGHT",
+            Action::GET => "GET",
+            Action::SHOOT => "SHOOT",
+            Action::NOTHING => "NOTHING"
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq)]
 pub enum PlayerDirection {

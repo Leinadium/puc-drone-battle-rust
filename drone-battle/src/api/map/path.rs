@@ -2,6 +2,8 @@ use crate::api::enums::{Action};
 use crate::api::map::Coord;
 use crate::api::map::node::Node;
 
+use std::fmt;
+
 #[derive(Clone, Debug)]
 pub struct Path {
     pub actions: Vec<Action>,
@@ -65,5 +67,12 @@ impl Path {
             dest: nodes.last()?.coord.clone(),
             coords: v_coords
         })
+    }
+}
+
+impl fmt::Display for Path {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let v = format!("{}", self.actions.iter().fold(String::new(), |acc, a| acc + "|" + a.to_str() ));
+        write!(f, "{{dest: {}, [{}]}}", self.dest, v)
     }
 }
