@@ -16,17 +16,20 @@ use std::borrow::Borrow;
 type ExitHandlerStruct = Arc<AtomicBool>;
 
 
-/// Struct containing everything the bot needs to play
+/// Bot/Drone struct
 ///
-/// To create a bot, use `Bot::new()` to create a bot,
-/// and `.start()` to start a infinite loop.
+/// This struct contains all the basic bot information, such as position and current score and health.
+/// Also contains some game states, such as current time/tick
 ///
-/// # Example
+/// To get some basic information from a bot, use `BotData::from_bot(bot)`, that generates a `BotData` object
+/// It also has some public variables, such as `config` (Config object) or `ai` (AI object)
 ///
-/// ```
-/// let mut bot = Bot::new(api::config::Config::default());
-/// bot.run();
-/// ```
+/// An object can be generated using the constructor `::new()`.
+///
+/// To run the bot, use `.run()`. This will start the bot loop, and can only be stopped by a CTRL-C
+/// or some exception/panic.
+///
+/// To free the object, use `.exit()`, to end all server threads in the background.
 pub struct Bot {
     /// AI
     pub ai: AI,
@@ -77,7 +80,10 @@ impl Bot {
     ///
     /// Also starts a `api::comms::GameServer` thread to communicate
     /// with the server.
-    /// Use `.exit()`, that sends a command to close the thread, to end it.
+    ///
+    /// # Params:
+    /// * config: A config object
+    /// * verbose: If true, it will print some information on each bot tick.
     pub fn new(config: Config, verbose: bool) -> Bot {
         // creating server listener
         let (tx_client, rx_server) = unbounded::<SendCommand>();
@@ -127,8 +133,6 @@ impl Bot {
     }
 
     /// Puts the bot to sleep for some duration. It skips negative durations
-    ///
-    /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
         spin_sleep::sleep(duration.clone());
         if self.verbose {
@@ -158,7 +162,7 @@ impl Bot {
     /// Method to be used whenever the bot suffers some damage.
     ///
     /// Checks if the last damage happened too fast by the same bot.
-    /// If so, sends a message to everyone:
+    /// If so, sends the following message to everyone in the server:
     ///
     ///`anticheat alert: Bot1 hit me again after XXX ms (allowed: XXX ms)`
     fn anti_cheat(&mut self, current_damage: String) -> Result<(), SystemTimeError>{
@@ -406,14 +410,14 @@ impl Bot {
 }
 
 /// Helper struct, to gather both ways of the channel
-pub struct ServerChannels {
+struct ServerChannels {
     pub tx: Sender<SendCommand>,
     pub rx: Receiver<RecvCommand>
 }
 
 /// Generates an AtomicBool, to be checked if the bot needs to be closed
 fn create_exit_handler() -> ExitHandlerStruct {
-    // copied from https://docs.rs/ctrlc/latest/ctrlc/#example
+    // source: https://docs.rs/ctrlc/latest/ctrlc/#example
     let running = Arc::new(AtomicBool::new(false));
     let running_copy = running.clone();
 
@@ -431,6 +435,7 @@ fn check_exit_handler(eh: &ExitHandlerStruct) -> bool {
     eh.load(Ordering::Relaxed)
 }
 
+/// Contains the basic bot information
 #[derive(Debug, Clone)]
 pub struct BotData {
     x: i16,
@@ -442,6 +447,7 @@ pub struct BotData {
 }
 
 impl BotData {
+    /// Generates a BotData object from a Bot reference
     pub fn from_bot(bot: &Bot) -> BotData {
         BotData {
             x: bot.x.clone(),
@@ -452,17 +458,17 @@ impl BotData {
             score: bot.score.clone()
         }
     }
-
+    /// Getter method for `bot.x`
     pub fn _get_x(&self) -> i16 { self.x.clone() }
-
+    /// Getter method for `bot.y`
     pub fn _get_y(&self) -> i16 { self.y.clone() }
-
+    /// Getter method for `bot.energy`
     pub fn get_energy(&self) -> i32 { self.energy.clone() }
-
+    /// Getter method for `bot.dir`
     pub fn _get_dir(&self) -> PlayerDirection { self.dir.clone() }
-
+    /// Getter method for `bot.last_observation`
     pub fn _get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
-
+    /// Getter method for `bot.score`
     pub fn _get_score(&self) -> i64 { self.score.clone() }
 
 }
@@ -474,17 +480,22 @@ impl Display for BotData {
     }
 }
 
+/// Helper struct, to be used inside `Bot.update_with_server()`.
 struct ServerChecklist {
+    /// Bot received observation data
     pub observation: bool,
+    /// Bot received user data
     pub user: bool,
+    /// Bot received game data
     pub game: bool,
 }
 
 impl ServerChecklist {
+    /// Generates a clean object (in which all variables are false
     pub fn new() -> ServerChecklist {
         ServerChecklist { observation: false, user: false, game: false }
     }
-
+    /// Checks if all necessary data has been received
     pub fn check(&self) -> bool {
         self.observation && self.game && self.user
     }

@@ -2,6 +2,7 @@ use std::fmt::{self, Debug, Formatter, Result};
 use rand::{thread_rng, Rng};
 
 
+/// The action the bot/drone may take in each turn
 #[derive(Debug, Clone, PartialEq, )]
 pub enum Action {
     FRONT,
@@ -14,6 +15,7 @@ pub enum Action {
 }
 
 impl Action {
+    /// Converts into a stt
     pub fn to_str(&self) -> &str {
         match self {
             Action::FRONT => "FRONT",
@@ -25,6 +27,7 @@ impl Action {
             Action::NOTHING => "NOTHING"
         }
     }
+    /// Get a random action
     pub fn random() -> Self {
         match thread_rng().gen_range(0..6) {
             0 => Action::FRONT,
@@ -38,6 +41,7 @@ impl Action {
 }
 
 
+/// All cardinal directions
 #[derive(Debug, Clone, Hash, PartialEq, PartialOrd, Ord, Eq)]
 pub enum PlayerDirection {
     NORTH,
@@ -47,6 +51,7 @@ pub enum PlayerDirection {
 }
 
 impl PlayerDirection {
+    /// Get a PlayerDirection object from a str representation
     pub fn from_str(dir: &str) -> PlayerDirection {
         match dir {
             "north" => PlayerDirection::NORTH,
@@ -57,6 +62,7 @@ impl PlayerDirection {
         }
     }
 
+    /// Converts the object into a String
     pub fn to_string(&self) -> String {
         match self {
             PlayerDirection::NORTH => "NORTH".to_string(),
@@ -67,6 +73,7 @@ impl PlayerDirection {
         }
     }
 
+    /// Get the opposite cardinal direction
     pub fn opposite(&self) -> PlayerDirection {
         match self {
             PlayerDirection::NORTH => PlayerDirection::SOUTH,
@@ -76,6 +83,7 @@ impl PlayerDirection {
         }
     }
 
+    /// Get the cardinal direction to the right (90 degrees clockwise)
     pub fn right(&self) -> PlayerDirection {
         match self {
             PlayerDirection::NORTH => PlayerDirection::EAST,
@@ -85,18 +93,25 @@ impl PlayerDirection {
         }
     }
 
+    /// Get the cardinal direction to the left (90 degrees counterclockwise)
     pub fn left(&self) -> PlayerDirection { self.right().opposite() }
 }
 
+/// All possible Game states
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerState {
+    /// Game is about to start
     READY,
+    /// Game is running
     GAME,
+    /// The bot is dead
     DEAD,
+    /// Game is over
     GAMEOVER
 }
 
 impl ServerState {
+    /// Creates an object from a str representation
     pub fn from_str(st: &str) -> ServerState {
         match st.to_lowercase().as_str() {
             "ready" => ServerState::READY,

@@ -19,8 +19,25 @@ use std::{
 };
 use crossbeam_channel::{Sender, Receiver};
 
+/// Channel to send a `RecvCommand` back to the bot/client
 type SenderChannel = Sender<RecvCommand>;
+/// Channel to receive a `SendCommand` from the bot/client
 type ReceiverChannel = Receiver<SendCommand>;
+
+/// GameServer struct
+///
+/// This is struct functions like a middle man between the bot and the server.
+/// It receives commands from the bot, parses it and sends to the server.
+/// And it receives data from the server, parses it and sends back to the bot.
+///
+/// on `.run()`, it will split itself in two: *bot_to_server* and *server_to_bot*:
+///
+/// # bot_to_server:
+/// waits for some action from the bot channel. Parses it into a string, and sends it to the server via TCP
+///
+/// # server_to_bot:
+/// waits for some data from the TCP connection with the server. Parses it into a `RecvCommand`, and
+/// sends it to the bot via channel.
 pub struct GameServer {
     recv_channel: ReceiverChannel,
     send_channel: SenderChannel,
@@ -30,6 +47,7 @@ pub struct GameServer {
 }
 
 impl GameServer {
+    /// Generates a new GameServer using arguments
     pub fn new(receiver: ReceiverChannel, sender: SenderChannel, config: &Config) -> GameServer {
         GameServer {
             recv_channel: receiver,
@@ -40,6 +58,13 @@ impl GameServer {
         }
     }
 
+    /// Sends all initial commands to the server:
+    ///
+    /// * name
+    /// * color
+    /// * gameStatus
+    /// * userStatus
+    /// * observation
     fn send_config(&mut self) -> Option<()> {
         let server = self.server.as_mut()?;
         // sending my name
@@ -65,6 +90,7 @@ impl GameServer {
         Some(())
     }
 
+    /// Closes the TCP connection
     fn close(server: TcpStream) {
         if let Err(e) = server.shutdown(Shutdown::Both) {
             println!("[GAMESERVER ERROR]: error while closing connection: {:?}", e);
@@ -73,6 +99,17 @@ impl GameServer {
         }
     }
 
+    /// Runs the game server loop
+    ///
+    /// Creates the TCP connection with the server. Then configures it.
+    /// Later, creates the `server_to_bot` thread, and then runs the `bot_to_server` loop.
+    ///
+    /// Because it starts an endless loop, it can only be stopped when receiving an *GOODBYE* command
+    /// from the bot.
+    ///
+    /// # Params:
+    /// * address: server address
+    /// * port: server port
     pub fn run(mut self, address: &str, port: Option<i32>) {
         // creating server
         println!("[GAMESERVER] creating server connection");
@@ -117,6 +154,10 @@ impl GameServer {
         return
     }
 
+    /// Bot to server communication loop.
+    ///
+    /// It waits for some command from the bot channel. Then parses into a string, and sends to the server.
+    /// If the command was a *GOODBYE*, it ends the loop, and closes the TCP connection
     fn loop_bot_to_server(receiver: ReceiverChannel, mut server: TcpStream) {
         let mut sc;
         let mut command;
@@ -136,12 +177,18 @@ impl GameServer {
                 println!("[GAMESERVER 'bot_to_server' ERROR]: error sending command to server")
             }
 
-            // checking if needs to shutdown
+            // checking if it needs to shut down
             if command == ServerCommand::GOODBYE { break; }
         }
         GameServer::close(server);
     }
 
+    /// Server to Bot communication loop.
+    ///
+    /// It waits for some server data. Parses into RecvCommands and sends via channel to the bot/client.
+    ///
+    /// If something goes wrong with the server TCP connection, it ends the loop. This is also valid
+    /// whenever the TCP connection is closed via `GameServer::close(server)`
     fn loop_server_to_bot(sender: SenderChannel, mut server: TcpStream) {
         loop {
             let mut recv_buffer = [0; 4096];
@@ -173,6 +220,7 @@ impl GameServer {
         }
     }
 
+    /// Sends the `SendCommand` to the server.
     pub fn do_this_command(send_channel: &mut Sender<SendCommand>, command: SendCommand, ) -> Result<(), &str> {
         match send_channel.send(command) {
             Err(_) => {
@@ -214,6 +262,7 @@ pub struct SendCommand {
 }
 
 impl SendCommand {
+    /// Transforms an action into a `SendCommand`
     pub fn from_action(action: &Action) -> SendCommand {
         match action {
             Action::FRONT => SendCommand { command: ServerCommand::FORWARD, attr: None },
@@ -228,7 +277,7 @@ impl SendCommand {
 }
 
 /// This struct is used to receive something from the server,
-/// and send via channel to the bot's main thread
+/// and send via channel to the main thread of the bot
 #[derive(Debug)]
 pub enum RecvCommand {
     Observations(ServerObservation),
@@ -328,7 +377,7 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Option<()> {
 
     // println!("GameServer: sending to server -> {:?} (raw message: {})", &command, &msg);
 
-    // colocando o \n e botando em utf-8
+    // inserting \n and converting to utf-8
     msg = format!("{}\n", msg);
     match send_msg(stream, msg) {
         Ok(_) => Some(()),
@@ -336,6 +385,8 @@ fn send_command(stream: &mut TcpStream, command: SendCommand) -> Option<()> {
     }
 }
 
+/// Parses a string containing commands into a vector of strings,
+/// which each one of the string is a single command, yet to be parsed
 fn parse_buffer(data: String) -> Vec<String> {
 
     let to_be_trimmed: &[char] = &['\0', '\r', '\n'];
@@ -358,6 +409,7 @@ fn parse_buffer(data: String) -> Vec<String> {
     v
 }
 
+/// Converts a string containing observations into a `LastObservation` object
 fn parse_observations(observations: String) -> LastObservation {
     let mut last_observation: LastObservation = LastObservation::new();
     if observations.trim() != "" {
@@ -381,6 +433,7 @@ fn parse_observations(observations: String) -> LastObservation {
     last_observation
 }
 
+/// Parses a string containing some command into a `RecvCommand`
 fn parse_command(cmd_str: &String) -> RecvCommand {
     let to_be_trimmed: &[char] = &['\0', '\r'];
 

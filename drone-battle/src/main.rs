@@ -5,6 +5,9 @@ use crate::api::bot::Bot;
 
 use std::env::args;
 
+/// Main function of the bot.
+///
+/// Read args, generate all configurations, and runs the bot.
 fn main() {
     // reading args
     let args: Vec<String> = args().collect();

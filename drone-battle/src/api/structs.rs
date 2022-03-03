@@ -6,24 +6,38 @@ use crate::api::enums::{
     PlayerDirection, ServerState,
 };
 
+/// Struct containing the last observation received for a drone
 #[derive(Debug, Clone)]
 pub struct LastObservation {
+    /// the bot is facing an enemy (1-10 blocks in distance)
     pub is_enemy_front: bool,
+    /// the bot is facing a wall
     pub is_blocked: bool,
+    /// the bot is near some enemy
     pub is_steps: bool,
+    /// the bot is near some hole
     pub is_breeze: bool,
+    /// the bot is near some flash
     pub is_flash: bool,
+    /// the bot is on top of a treasure
     pub is_treasure: bool,
+    /// the bot is on top of a powerup
     pub is_powerup: bool,
+    /// the bot took some damage
     pub is_damage: bool,
+    /// the bot hit other drone
     pub is_hit: bool,
+    /// the distance between the bot and an enemy, if `is_enemy_front` is set
     pub distance_enemy_front: i16,
 
+    /// if the bot has processed the `is_hit` observation
     pub has_read_hit: bool,       // because hit and damage observations are separate
+    /// if the bot has processed the `is_damage` observation
     pub has_read_damage: bool,
 }
 
 impl LastObservation {
+    /// Generates a new one, with all negative values
     pub fn new() -> LastObservation {
         LastObservation {
             is_enemy_front: false,
@@ -41,6 +55,7 @@ impl LastObservation {
         }
     }
 
+    /// Resets to default values. Is the same of generating a new object
     pub fn reset(&mut self) {
         self.is_enemy_front = false;
         self.is_blocked = false;
@@ -74,25 +89,34 @@ impl fmt::Display for LastObservation {
     }
 }
 
+/// Struct for the color
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Color {
+    /// red
     pub r: u8,
+    /// green
     pub g: u8,
+    /// blue
     pub b: u8,
+    /// alpha (transparency)
     pub a: u8,
 }
 
 impl Color {
+    /// converts a color from a string
     pub fn from_str(_c: &str) -> Color {
-        // TODO
+        // THIS IMPLEMENTATION DOES NOT NEED TO KNOW WHAT COLOR THE BOT IS.
+        // SO, IT WILL ALWAYS RETURN BLACK
         Color { r: 0, g: 0, b: 0, a: 0 }
     }
 
+    /// converts a color to a String
     pub fn to_string(&self) -> String {
         format!("{};{};{}", &self.r, &self.g, &self.b)
     }
 }
 
+/// Contain scoreboard information of a single bot/drone
 #[derive(Debug, Clone)]
 pub struct Scoreboard {
     pub name: String,
