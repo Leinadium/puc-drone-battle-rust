@@ -61,7 +61,7 @@ impl Config {
     pub fn default() -> Config {
         Config {
             name: random_string(10),
-            url: "baffa.zapto.org".to_string(),
+            url: "atari.icad.puc-rio.br".to_string(),
             slow_timer: Duration::from_millis(1000),
             normal_timer: Duration::from_millis(100),
             min_timer: Duration::from_millis(100),

@@ -1,4 +1,6 @@
 use std::fmt::{self, Debug, Formatter, Result};
+use rand::{thread_rng, Rng};
+
 
 #[derive(Debug, Clone, PartialEq, )]
 pub enum Action {
@@ -21,6 +23,16 @@ impl Action {
             Action::GET => "GET",
             Action::SHOOT => "SHOOT",
             Action::NOTHING => "NOTHING"
+        }
+    }
+    pub fn random() -> Self {
+        match thread_rng().gen_range(0..6) {
+            0 => Action::FRONT,
+            1 => Action::BACK,
+            2 => Action::LEFT,
+            3 => Action::RIGHT,
+            4 => Action::GET,
+            _ => Action::SHOOT
         }
     }
 }

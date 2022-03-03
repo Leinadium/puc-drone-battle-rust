@@ -2,9 +2,7 @@ use crate::api::comms::{GameServer, SendCommand, RecvCommand, ServerCommand};
 use crate::api::structs::{ServerPlayer, ServerScoreboard, LastObservation};
 use crate::api::enums::{PlayerDirection, ServerState, Action};
 use crate::api::config::Config;
-use crate::api::map::update;
 use crate::api::ai::AI;
-use crate::api::graphics::Graphics;
 
 use crossbeam_channel::{unbounded, Sender, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -70,7 +68,7 @@ pub struct Bot {
     /// Handle of game server
     thread_handle: JoinHandle<()>,
 
-    graphics: Option<Graphics>,
+    verbose: bool,
 
 }
 
@@ -80,7 +78,7 @@ impl Bot {
     /// Also starts a `api::comms::GameServer` thread to communicate
     /// with the server.
     /// Use `.exit()`, that sends a command to close the thread, to end it.
-    pub fn new(config: Config, graphics: Option<Graphics>) -> Bot {
+    pub fn new(config: Config, verbose: bool) -> Bot {
         // creating server listener
         let (tx_client, rx_server) = unbounded::<SendCommand>();
         let (tx_server, rx_client) = unbounded::<RecvCommand>();
@@ -94,7 +92,7 @@ impl Bot {
 
         // creating bot
         Bot {
-            ai: AI::new(&config, graphics.is_none()),
+            ai: AI::new(&config, verbose.clone()),
             current_tick: 0,
             config,
             server: ServerChannels {tx: tx_client, rx: rx_client},
@@ -114,14 +112,13 @@ impl Bot {
             last_time_damage: SystemTime::now(),
             exit_handler: create_exit_handler(),
             thread_handle: join_handle,
-            graphics
+            verbose: true
         }
     }
 
     /// Closes the GameServer thread.
     /// Also consumes itself.
     pub fn exit(mut self) {
-        if let Some(g) = self.graphics { g.close(); }
         GameServer::do_this_command(
             &mut self.server.tx,
             SendCommand { command: ServerCommand::GOODBYE, attr: None}
@@ -133,9 +130,8 @@ impl Bot {
     ///
     /// Also updates the field.
     fn sleep(&mut self, duration: Duration) {
-        update::do_tick(&mut self.ai.field, self.config.normal_timer.clone());
         spin_sleep::sleep(duration.clone());
-        if self.graphics.is_none() {
+        if self.verbose {
             println!();
             println!("[BOT] sleep: {} ms", duration.as_millis());
         }
@@ -184,8 +180,6 @@ impl Bot {
         let mut playing: bool = false;
         let mut action: Action = Action::NOTHING;
 
-        self.ai.field.restart();
-
         loop {
             // game is running
             if check_exit_handler(self.exit_handler.borrow()) { return }    // early exit
@@ -220,7 +214,7 @@ impl Bot {
 
                 // do the action
                 let data = BotData::from_bot(&self);
-                if self.graphics.is_none() {println!("[BOT] bot_data: {}", &data);}
+                if self.verbose {println!("[BOT] bot_data: {}", &data);}
                 action = self.ai.think(data);
                 GameServer::do_this_command(
                     &mut self.server.tx,
@@ -239,7 +233,6 @@ impl Bot {
                 self.update_with_server(false);
                 if playing { self.say_all_chat("gg".to_string()) }      // say gg once
                 playing = false;
-                self.ai.field.restart();
 
                 // after some time, ask for scoreboard
                 if timer == 5 {
@@ -268,14 +261,6 @@ impl Bot {
 
     /// Helper method, containing the actions to be done after sending an action
     fn after_action(&mut self) {
-        if self.graphics.is_some() {
-            let botdata = BotData::from_bot(&self);
-            self.graphics.as_mut().unwrap().update(
-                &botdata,
-                &self.ai,
-                &self.ai.field
-            );
-        }
         self.last_observation.reset();
         // asking for some observations
         GameServer::do_this_command(
@@ -468,17 +453,17 @@ impl BotData {
         }
     }
 
-    pub fn get_x(&self) -> i16 { self.x.clone() }
+    pub fn _get_x(&self) -> i16 { self.x.clone() }
 
-    pub fn get_y(&self) -> i16 { self.y.clone() }
+    pub fn _get_y(&self) -> i16 { self.y.clone() }
 
     pub fn get_energy(&self) -> i32 { self.energy.clone() }
 
-    pub fn get_dir(&self) -> PlayerDirection { self.dir.clone() }
+    pub fn _get_dir(&self) -> PlayerDirection { self.dir.clone() }
 
-    pub fn get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
+    pub fn _get_last_observation(&self) -> LastObservation { self.last_observation.clone() }
 
-    pub fn get_score(&self) -> i64 { self.score.clone() }
+    pub fn _get_score(&self) -> i64 { self.score.clone() }
 
 }
 
