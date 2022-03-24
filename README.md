@@ -5,6 +5,8 @@ Projeto para a 1ª Competição de IA do Departamento de Informática da PUC-Rio
 Este é uma cópia do [trabalho 4 para INF1771 - Inteligencia Artificial](https://github.com/Leinadium/puc-drone-battle), 
 porém dessa vez este trabalho foi escrito em Rust, em vez de Java.
 
+**Para acessar a API, troque para a branch [public_base](https://github.com/Leinadium/puc-drone-battle-rust/tree/public_base)**
+
 Desenvolvido por Daniel Guimarães
 
 ## Descrição
